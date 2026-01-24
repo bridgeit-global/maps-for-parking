@@ -1,36 +1,210 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Maps for Parking - Mumbai
 
-## Getting Started
+An interactive map application for visualizing parking zones in Mumbai using Mapbox Vector Tiles and MapLibre GL JS.
 
-First, run the development server:
+## Features
+
+- 🗺️ **Interactive Map** - Navigate Mumbai with OpenStreetMap base layer
+- 🅿️ **Parking Zones** - Visualize parking data from Mapbox tilesets
+- 🎨 **Dynamic Styling** - Automatic color-coding based on parking type/status
+- 📊 **Data Inspection** - Click on zones to see detailed information
+- 🔍 **Debug Console** - Inspect tileset structure and fields
+- 📱 **Responsive Design** - Works on desktop and mobile devices
+
+## Quick Start
+
+### 1. Install Dependencies
 
 ```bash
-npm run dev
+pnpm install
 # or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure Environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env.local` file in the project root:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=your_mapbox_token_here
+NEXT_PUBLIC_TILESET_ID=username.tileset-id
+```
 
-## Learn More
+To get a Mapbox access token:
+1. Sign up at [Mapbox](https://account.mapbox.com/auth/signup/)
+2. Go to your [Access Tokens](https://account.mapbox.com/access-tokens/) page
+3. Copy your default public token or create a new one
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Run Development Server
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm dev
+# or
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open [http://localhost:3000](http://localhost:3000) to see the application.
 
-## Deploy on Vercel
+## Pages
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **/** - Home page with project overview
+- **/map** - Interactive map with parking data visualization
+- **/debug/tileset** - Debug console to inspect tileset structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Tileset Integration
+
+This application automatically reads from your Mapbox tileset and renders it with intelligent styling based on the data structure.
+
+### Supported Features
+
+- ✅ Automatic layer detection from tileset metadata
+- ✅ Dynamic style expressions based on field types
+- ✅ Geometry type filtering (Polygons → fills, Polylines → lines, Points → circles)
+- ✅ Support for Polygon, LineString, and Point geometries
+- ✅ Color-coding by parking type or status
+- ✅ Interactive popups with feature properties
+- ✅ Zoom-adaptive styling
+
+### Data Fields
+
+The application looks for these common fields and styles them automatically:
+
+- `parking_type` / `type` / `category` - Used for color-coding
+- `status` / `availability` - Alternative field for color-coding
+- Any other fields - Displayed in popup on click
+
+**See [TILESET_GUIDE.md](./TILESET_GUIDE.md) for detailed documentation.**
+
+## Project Structure
+
+```
+maps-for-parking/
+├── app/
+│   ├── components/
+│   │   └── MapView.tsx          # Main map component
+│   ├── api/
+│   │   └── tileset/
+│   │       ├── metadata/        # Tileset metadata API
+│   │       └── data/            # Tileset data API
+│   ├── map/
+│   │   └── page.tsx             # Map page
+│   ├── debug/
+│   │   └── tileset/
+│   │       └── page.tsx         # Debug console
+│   └── page.tsx                 # Home page
+├── public/                      # Static assets
+├── TILESET_GUIDE.md            # Detailed tileset documentation
+└── README.md                   # This file
+```
+
+## Technologies
+
+- **Next.js 16** - React framework with App Router
+- **MapLibre GL JS** - Open-source map rendering library
+- **TypeScript** - Type-safe JavaScript
+- **Tailwind CSS** - Utility-first CSS framework
+- **Mapbox Vector Tiles** - Efficient vector tile format
+
+## Development
+
+### Build for Production
+
+```bash
+pnpm build
+pnpm start
+```
+
+### Lint Code
+
+```bash
+pnpm lint
+```
+
+## Debugging
+
+### Using the Debug Console
+
+1. Go to [http://localhost:3000/debug/tileset](http://localhost:3000/debug/tileset)
+2. Enter your tileset ID
+3. Click "Fetch Data"
+4. Inspect:
+   - Vector layers and their fields
+   - Zoom levels and bounds
+   - Field types and values
+   - Example style expressions
+
+### Browser Console
+
+The map component logs detailed information:
+- Tileset metadata
+- Available data layers
+- Layer fields and types
+- Style expressions being applied
+
+## Customization
+
+### Change Colors
+
+Edit `app/components/MapView.tsx` in the `createStyleExpressions` function:
+
+```typescript
+colorExpression = [
+  'match',
+  ['get', 'parking_type'],
+  'paid', '#YOUR_COLOR',
+  'free', '#YOUR_COLOR',
+  '#DEFAULT_COLOR'
+];
+```
+
+### Add Custom Layers
+
+Modify the `addLayerBasedOnFields` function to add custom layer configurations.
+
+### Change Map Style
+
+Update the base map style in the map initialization:
+
+```typescript
+style: {
+  version: 8,
+  sources: {
+    // Add your custom sources
+  },
+  layers: [
+    // Add your custom layers
+  ]
+}
+```
+
+## Troubleshooting
+
+**Map not loading?**
+- Check your Mapbox access token
+- Verify network connectivity
+- Check browser console for errors
+
+**Tileset not showing?**
+- Verify tileset ID format (`username.tileset-id`)
+- Ensure you're zoomed to the correct level
+- Use the debug console to inspect tileset structure
+
+**Wrong colors?**
+- Check field names in your data
+- Verify field values match style expressions
+- Use debug console to see actual field names
+
+## Resources
+
+- [MapLibre GL JS Docs](https://maplibre.org/maplibre-gl-js/docs/)
+- [Mapbox Style Specification](https://docs.mapbox.com/style-spec/)
+- [Mapbox Vector Tiles](https://docs.mapbox.com/vector-tiles/specification/)
+- [Next.js Documentation](https://nextjs.org/docs)
+
+## License
+
+This project is open source and available under the MIT License.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
