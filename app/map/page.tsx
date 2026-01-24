@@ -1,5 +1,5 @@
-import Link from 'next/link';
-import MapView from '../components/MapView';
+import Link from "next/link";
+import MapView from "../components/MapView";
 
 export default function MapPage() {
   // You can pass tileset configuration via environment variables
@@ -9,24 +9,24 @@ export default function MapPage() {
   const mapboxAccessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
 
   return (
-    <div className="h-screen flex flex-col bg-white dark:bg-black">
+    <div className="h-screen flex flex-col bg-[#0b1118] text-white">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 sm:px-6 lg:px-8 py-4 z-30">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0b1118]/95 px-4 py-4 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div>
-            <Link 
-              href="/" 
-              className="text-2xl font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+            <Link
+              href="/"
+              className="text-lg font-semibold tracking-tight text-white transition hover:text-white/80"
             >
               Maps for Parking
             </Link>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Mumbai Parking Zones
+            <p className="mt-1 text-xs uppercase tracking-[0.3em] text-white/40">
+              Mumbai parking zones
             </p>
           </div>
           <Link
             href="/"
-            className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 transition hover:border-white/30 hover:text-white"
           >
             ← Back to Home
           </Link>
@@ -34,8 +34,8 @@ export default function MapPage() {
       </header>
 
       {/* Map Container */}
-      <div className="flex-1 relative">
-        <MapView 
+      <div className="relative flex-1">
+        <MapView
           tilesetUrl={tilesetUrl}
           tilesetId={tilesetId}
           mapboxAccessToken={mapboxAccessToken}
@@ -43,34 +43,41 @@ export default function MapPage() {
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-900 rounded-lg shadow-lg p-4 z-20 max-w-xs">
-        <h3 className="font-semibold text-lg mb-3 text-gray-900 dark:text-white">Parking Zones</h3>
-        <div className="space-y-2 text-sm">
+      <div className="absolute bottom-4 left-4 z-20 w-60 rounded-2xl border border-white/10 bg-black/70 p-4 shadow-2xl backdrop-blur">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold tracking-tight">
+            Parking Zones
+          </h3>
+          <span className="rounded-full bg-[#137fec]/20 px-2 py-0.5 text-[10px] font-semibold text-[#6fb1ff]">
+            Live
+          </span>
+        </div>
+        <div className="space-y-2 text-xs text-white/70">
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-blue-500"></div>
-            <span className="text-gray-700 dark:text-gray-300">Paid Parking</span>
+            <span className="size-3 rounded bg-blue-500" />
+            Paid Parking
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-green-500"></div>
-            <span className="text-gray-700 dark:text-gray-300">Free Parking</span>
+            <span className="size-3 rounded bg-emerald-400" />
+            Free Parking
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-red-500"></div>
-            <span className="text-gray-700 dark:text-gray-300">Restricted</span>
+            <span className="size-3 rounded bg-red-400" />
+            Restricted
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-yellow-500"></div>
-            <span className="text-gray-700 dark:text-gray-300">Time Restricted</span>
+            <span className="size-3 rounded bg-yellow-400" />
+            Time Restricted
           </div>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-          Click on any zone to see detailed information
+        <p className="mt-3 text-[11px] text-white/50">
+          Click any zone for detailed information.
         </p>
         <Link
           href="/debug/tileset"
-          className="mt-3 block text-center text-xs text-blue-600 dark:text-blue-400 hover:underline"
+          className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold text-white/70 transition hover:border-white/20 hover:text-white"
         >
-          🔍 Debug Tileset Data
+          Debug Tileset Data
         </Link>
       </div>
     </div>
