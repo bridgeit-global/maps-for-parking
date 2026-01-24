@@ -369,7 +369,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         10, 3,
         15, 6,
         20, 12
-      ]
+      ] as any
     };
   };
 
