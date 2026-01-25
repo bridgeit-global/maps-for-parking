@@ -23,7 +23,11 @@ export default function Home() {
       mapLive: "Live zone updates",
       mapLiveStamp: "Updated 2 mins ago",
       actions: [
-        { label: "Pay Challan", icon: "🧾" },
+        {
+          label: "Pay Challan",
+          icon: "🧾",
+          href: "https://mahatrafficechallan.gov.in/payechallan/PaymentService.htm",
+        },
         { label: "Settings", icon: "⚙️" },
         { label: "Support", icon: "💬" },
       ],
@@ -43,7 +47,11 @@ export default function Home() {
       mapLive: "थेट झोन अपडेट",
       mapLiveStamp: "२ मिनिटांपूर्वी अपडेट",
       actions: [
-        { label: "चलान भरा", icon: "🧾" },
+        {
+          label: "चलान भरा",
+          icon: "🧾",
+          href: "https://mahatrafficechallan.gov.in/payechallan/PaymentService.htm",
+        },
         { label: "सेटिंग्स", icon: "⚙️" },
         { label: "सपोर्ट", icon: "💬" },
       ],
@@ -146,7 +154,7 @@ export default function Home() {
             className="relative flex min-h-[520px] items-center justify-center bg-cover bg-center px-6 py-16 text-center"
             style={{
               backgroundImage:
-                'linear-gradient(rgba(11, 17, 24, 0.6) 0%, rgba(11, 17, 24, 0.4) 50%, rgba(11, 17, 24, 1) 100%), url("https://lh3.googleusercontent.com/aida-public/AB6AXuAvtZRqdfyz2BePWsqyrOmMp2__joVSS9OCrNqO1HRTOoNxZ3Y92Z1iH2Bl0_0bKV0M2rCefAENJpVoeO2e7ZprLFfcMtJ1YZMMincc1aySz7HM3VNy4hu6oaTkIrnTeA36hVrDE4K2OZRS--t5iR9eQ9WnbBIwBEI1YKSIONAbXkMz6jnhIn3KQ4JImHFFMAAJrYHVkkMwLbf1AuBTQu7HjCgitAsrcNilsPNr3CHRz5ow0WZBtTm_YY-U7keMeQcypvp8h73iH330")',
+                'linear-gradient(rgba(11, 17, 24, 0.6) 0%, rgba(11, 17, 24, 0.4) 50%, rgba(11, 17, 24, 1) 100%), url("https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1600&q=80")',
             }}
           >
             <div className="relative z-10 max-w-xl space-y-4">
@@ -182,101 +190,104 @@ export default function Home() {
           <div className="mx-auto max-w-6xl">
             <div className="mb-6">
               <h3 className="text-2xl font-semibold tracking-tight">
-                {copy.rulesTitle}
+                Parking rules & regulations
               </h3>
               <p className="mt-2 text-sm text-white/60">
-                {copy.rulesSubtitle}
+                Pointers based on Mumbai Traffic Police guidelines.
               </p>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              {[
-                {
-                  title: "Odd/Even Dates",
-                  description:
-                    "Parking allowed on alternate sides based on date.",
-                  tone: "bg-[#137fec]/15 text-[#6fb1ff]",
-                },
-                {
-                  title: "Tow-Away Zones",
-                  description:
-                    "Avoid red zones to prevent immediate vehicle towing.",
-                  tone: "bg-red-500/15 text-red-400",
-                },
-                {
-                  title: "Pay & Park Rates",
-                  description:
-                    "Check standard hourly rates for public parking lots.",
-                  tone: "bg-yellow-500/15 text-yellow-300",
-                },
-              ].map((card) => (
-                <div
-                  key={card.title}
-                  className="flex items-start gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-white/25"
-                >
-                  <div
-                    className={`flex size-12 items-center justify-center rounded-full ${card.tone}`}
-                  >
-                    <span className="text-lg font-semibold">●</span>
-                  </div>
-                  <div>
-                    <h4 className="text-base font-semibold">{card.title}</h4>
-                    <p className="mt-1 text-sm text-white/70">
-                      {card.description}
-                    </p>
-                  </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-red-500/15 text-red-400">
+                    🚫
+                  </span>
+                  <h4 className="text-base font-semibold">No‑Parking Zones</h4>
                 </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section id="map" className="px-4 pb-12">
-          <div className="mx-auto max-w-6xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-2xl font-semibold tracking-tight">
-                {copy.mapTitle}
-              </h3>
-              <Link
-                href="/map"
-                className="text-sm font-semibold text-[#6fb1ff] transition hover:text-white"
-              >
-                {copy.mapCta}
-              </Link>
-            </div>
-            <div className="relative h-80 overflow-hidden rounded-3xl border border-white/10 shadow-2xl">
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-700 hover:scale-105"
-                style={{
-                  backgroundImage:
-                    'url("https://lh3.googleusercontent.com/aida-public/AB6AXuCuwEV7XzCKsEvWYFVCbflmKYJNQwLUE_f3JHkEe-ckcAk6XarIhSUz6IlufLqkl0Q1xRsIwbE-R2JF4lol07lE-nnlm21eu5yt-pXwEL9CTvxGKrN-DB9gbdi2BPWkXBKpVUUizdACJUYIJpVlFPSfcvEkjS3rXZdU0yvxJhcKq6BqSzj6oDXeVpGeNLf50EZf7Xf5PBIFBsuo7UJJSkBT06zY2q7k7TSqBR8V6FME52KXiIBwJGvHnGeZd1GuUSd_perwHNufkDHz")',
-                }}
-              />
-              <div className="absolute inset-0 bg-black/40" />
-              <div className="absolute left-4 top-4 flex gap-2">
-                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3 py-1.5 text-xs font-semibold">
-                  <span className="size-2 rounded-full bg-emerald-400" />
-                  Legal
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3 py-1.5 text-xs font-semibold">
-                  <span className="size-2 rounded-full bg-red-400" />
-                  Restricted
-                </div>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li>Never park in marked no‑parking zones.</li>
+                  <li>No parking on footpaths or zebra crossings.</li>
+                  <li>Avoid areas near signals and intersections.</li>
+                  <li>Do not block emergency access or narrow streets.</li>
+                </ul>
               </div>
-              <div className="absolute right-4 top-4 rounded-full bg-yellow-400 px-3 py-1 text-xs font-semibold text-black shadow-lg">
-                {copy.mapStatus}
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between bg-gradient-to-t from-black/90 to-transparent p-4 pt-12">
-                <div>
-                  <p className="text-sm font-semibold">{copy.mapLive}</p>
-                  <p className="text-xs text-white/70">{copy.mapLiveStamp}</p>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-yellow-500/15 text-yellow-300">
+                    💰
+                  </span>
+                  <h4 className="text-base font-semibold">
+                    Parking fines (2025)
+                  </h4>
                 </div>
-                <Link
-                  href="/map"
-                  className="inline-flex items-center gap-2 rounded-full bg-[#137fec] px-4 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-[#0f6ed3]"
-                >
-                  Explore Map
-                  <span className="text-sm">↗</span>
-                </Link>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li>First offense: ₹500.</li>
+                  <li>Subsequent offenses: ₹1,500.</li>
+                  <li>Two‑wheelers: ₹5,000–₹8,300.</li>
+                  <li>Light motor vehicles: ₹10,000–₹15,100.</li>
+                  <li>Late payment charges apply beyond 60 days.</li>
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300">
+                    ✅
+                  </span>
+                  <h4 className="text-base font-semibold">
+                    Parking best practices
+                  </h4>
+                </div>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li>Follow road signs and markings.</li>
+                  <li>Use designated lots where available.</li>
+                  <li>Park parallel to the curb unless told otherwise.</li>
+                  <li>Leave space for other vehicles to maneuver.</li>
+                  <li>Never abandon your vehicle in public spaces.</li>
+                </ul>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-[#137fec]/15 text-[#6fb1ff]">
+                    📅
+                  </span>
+                  <h4 className="text-base font-semibold">
+                    Odd‑Even parking rule
+                  </h4>
+                </div>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li>Odd dates: park on the western side.</li>
+                  <li>Even dates: park on the eastern side.</li>
+                  <li>Applies only in notified zones.</li>
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-purple-500/15 text-purple-300">
+                    📱
+                  </span>
+                  <h4 className="text-base font-semibold">E‑Challan system</h4>
+                </div>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li>AI cameras detect violations automatically.</li>
+                  <li>SMS notifications are sent instantly.</li>
+                  <li>Pay within 60 days to avoid extra penalties.</li>
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-slate-500/15 text-slate-200">
+                    📋
+                  </span>
+                  <h4 className="text-base font-semibold">
+                    Documents to carry
+                  </h4>
+                </div>
+                <ul className="space-y-2 text-sm text-white/70">
+                  <li>Driving license, RC, insurance.</li>
+                  <li>PUC certificate (physical or digital).</li>
+                </ul>
               </div>
             </div>
           </div>
@@ -285,15 +296,29 @@ export default function Home() {
         <section id="actions" className="px-4 pb-16">
           <div className="mx-auto max-w-6xl">
             <div className="grid gap-3 md:grid-cols-3">
-              {copy.actions.map((item) => (
-                <button
-                  key={item.label}
-                  className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
-                >
-                  <span className="text-xl">{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
+              {copy.actions.map((item) =>
+                item.href ? (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <span className="text-xl">{item.icon}</span>
+                    {item.label}
+                  </a>
+                ) : (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <span className="text-xl">{item.icon}</span>
+                    {item.label}
+                  </button>
+                )
+              )}
             </div>
             <div className="mt-8 text-center text-xs text-white/50">
               © 2026 Maps for Parking. Built by{" "}
