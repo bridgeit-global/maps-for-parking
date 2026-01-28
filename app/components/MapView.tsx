@@ -73,34 +73,37 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     fetchTilesetMetadata();
   }, [tilesetId]);
 
+  // Helper function to find the first label layer in the map style
+  const findFirstLabelLayerId = (mapInstance: maplibregl.Map): string | undefined => {
+    const layers = mapInstance.getStyle()?.layers;
+    if (!layers) return undefined;
+    
+    // Find the first layer that contains labels (typically symbol layers with text)
+    for (const layer of layers) {
+      // Label layers are typically symbol layers with text-field property
+      // Common naming patterns: *-label, *_label, place-*, poi-*
+      if (
+        layer.type === 'symbol' &&
+        (layer.id.includes('label') || 
+         layer.id.includes('place') || 
+         layer.id.includes('poi') ||
+         layer.id.includes('name') ||
+         layer.id.includes('text'))
+      ) {
+        return layer.id;
+      }
+    }
+    return undefined;
+  };
+
   useEffect(() => {
     if (!mapContainer.current) return;
 
-    // Initialize the map
+    // Initialize the map with Carto vector basemap (has separate label layers)
+    // This allows us to insert custom layers below labels
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: {
-        version: 8,
-        sources: {
-          'openmaptiles': {
-            type: 'raster',
-            tiles: [
-              'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-            ],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors'
-          }
-        },
-        layers: [
-          {
-            id: 'osm-tiles',
-            type: 'raster',
-            source: 'openmaptiles',
-            minzoom: 0,
-            maxzoom: 22
-          }
-        ]
-      },
+      style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
       center: tilesetMetadata?.center 
         ? [tilesetMetadata.center[0], tilesetMetadata.center[1]] 
         : [MUMBAI_CENTER.lng, MUMBAI_CENTER.lat],
@@ -158,8 +161,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             console.log('Adding tileset source:', sourceConfig);
             map.current.addSource(sourceId, sourceConfig);
 
+            // Find the first label layer to insert custom layers below it
+            const firstLabelLayerId = findFirstLabelLayerId(map.current);
+            console.log('First label layer found:', firstLabelLayerId);
+
             // Add layers based on tileset metadata
-            addTilesetLayers(map.current, sourceId, tilesetMetadata);
+            addTilesetLayers(map.current, sourceId, tilesetMetadata, firstLabelLayerId);
           }
         } catch (err) {
           console.error('Error adding tileset:', err);
@@ -188,11 +195,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const addTilesetLayers = (
     mapInstance: maplibregl.Map,
     sourceId: string,
-    metadata: TilesetMetadata | null
+    metadata: TilesetMetadata | null,
+    beforeId?: string
   ) => {
     if (!metadata?.vector_layers || metadata.vector_layers.length === 0) {
       // Fallback: Add a generic layer if no metadata
-      addGenericParkingLayer(mapInstance, sourceId);
+      addGenericParkingLayer(mapInstance, sourceId, beforeId);
       return;
     }
 
@@ -202,23 +210,25 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       
       console.log(`Adding layer: ${layerId}`, fields);
 
-      // Determine geometry type and add appropriate layer
-      addLayerBasedOnFields(mapInstance, sourceId, layerId, fields, index);
+      // Determine geometry type and add appropriate layer (below labels)
+      addLayerBasedOnFields(mapInstance, sourceId, layerId, fields, index, beforeId);
     });
   };
 
   // Function to add layer with appropriate styling based on fields
+  // beforeId parameter ensures layers are added below labels
   const addLayerBasedOnFields = (
     mapInstance: maplibregl.Map,
     sourceId: string,
     sourceLayer: string,
     fields: Record<string, any>,
-    layerIndex: number
+    layerIndex: number,
+    beforeId?: string
   ) => {
     // Create style expressions based on available fields
     const styleExpressions = createStyleExpressions(fields);
     
-    // Add polygon fill layer with geometry type filter
+    // Add polygon fill layer with geometry type filter (below labels)
     const fillLayerId = `${sourceLayer}-fill`;
     try {
       mapInstance.addLayer({
@@ -231,9 +241,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'fill-color': styleExpressions.fillColor,
           'fill-opacity': styleExpressions.fillOpacity,
         }
-      });
+      }, beforeId); // Insert below labels
 
-      // Add outline for polygons
+      // Add outline for polygons (below labels)
       const outlineLayerId = `${sourceLayer}-outline`;
       mapInstance.addLayer({
         id: outlineLayerId,
@@ -246,18 +256,18 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'line-width': 1.5,
           'line-opacity': 0.8
         }
-      });
+      }, beforeId); // Insert below labels
 
       // Add click handler
       addClickHandler(mapInstance, fillLayerId);
       addHoverHandler(mapInstance, fillLayerId);
       
-      console.log(`✓ Added polygon (fill) layer: ${fillLayerId}`);
+      console.log(`✓ Added polygon (fill) layer: ${fillLayerId} (below labels)`);
     } catch (err) {
       console.log(`No polygon geometries in ${sourceLayer}`);
     }
 
-    // Add line layer for linestrings with geometry type filter
+    // Add line layer for linestrings with geometry type filter (below labels)
     const lineLayerId = `${sourceLayer}-line`;
     try {
       mapInstance.addLayer({
@@ -271,17 +281,17 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'line-width': styleExpressions.lineWidth,
           'line-opacity': 0.9
         }
-      });
+      }, beforeId); // Insert below labels
 
       addClickHandler(mapInstance, lineLayerId);
       addHoverHandler(mapInstance, lineLayerId);
       
-      console.log(`✓ Added polyline (line) layer: ${lineLayerId}`);
+      console.log(`✓ Added polyline (line) layer: ${lineLayerId} (below labels)`);
     } catch (err) {
       console.log(`No linestring geometries in ${sourceLayer}`);
     }
 
-    // Add circle layer for points with geometry type filter
+    // Add circle layer for points with geometry type filter (below labels)
     const circleLayerId = `${sourceLayer}-circle`;
     try {
       mapInstance.addLayer({
@@ -297,12 +307,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2
         }
-      });
+      }, beforeId); // Insert below labels
 
       addClickHandler(mapInstance, circleLayerId);
       addHoverHandler(mapInstance, circleLayerId);
       
-      console.log(`✓ Added point (circle) layer: ${circleLayerId}`);
+      console.log(`✓ Added point (circle) layer: ${circleLayerId} (below labels)`);
     } catch (err) {
       console.log(`No point geometries in ${sourceLayer}`);
     }
@@ -414,12 +424,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   };
 
   // Fallback function for generic parking layer
-  const addGenericParkingLayer = (mapInstance: maplibregl.Map, sourceId: string) => {
+  // beforeId parameter ensures layers are added below labels
+  const addGenericParkingLayer = (mapInstance: maplibregl.Map, sourceId: string, beforeId?: string) => {
     const sourceLayer = tilesetId?.split('.').pop() || 'default';
     
-    console.log('Adding generic parking layers for source-layer:', sourceLayer);
+    console.log('Adding generic parking layers for source-layer:', sourceLayer, beforeId ? `(below ${beforeId})` : '');
     
-    // Add polygon layer
+    // Add polygon layer (below labels)
     try {
       mapInstance.addLayer({
         id: 'parking-fill',
@@ -440,9 +451,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           ],
           'fill-opacity': 0.6
         }
-      });
+      }, beforeId); // Insert below labels
 
-      // Add polygon outline
+      // Add polygon outline (below labels)
       mapInstance.addLayer({
         id: 'parking-outline',
         type: 'line',
@@ -454,17 +465,17 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'line-width': 1.5,
           'line-opacity': 0.8
         }
-      });
+      }, beforeId); // Insert below labels
 
       addClickHandler(mapInstance, 'parking-fill');
       addHoverHandler(mapInstance, 'parking-fill');
       
-      console.log('✓ Added generic polygon layer');
+      console.log('✓ Added generic polygon layer (below labels)');
     } catch (err) {
       console.error('Error adding generic polygon layer:', err);
     }
 
-    // Add line layer for polylines
+    // Add line layer for polylines (below labels)
     try {
       mapInstance.addLayer({
         id: 'parking-line',
@@ -486,17 +497,17 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'line-width': 3,
           'line-opacity': 0.9
         }
-      });
+      }, beforeId); // Insert below labels
 
       addClickHandler(mapInstance, 'parking-line');
       addHoverHandler(mapInstance, 'parking-line');
       
-      console.log('✓ Added generic polyline layer');
+      console.log('✓ Added generic polyline layer (below labels)');
     } catch (err) {
       console.error('Error adding generic polyline layer:', err);
     }
 
-    // Add circle layer for points
+    // Add circle layer for points (below labels)
     try {
       mapInstance.addLayer({
         id: 'parking-circle',
@@ -527,12 +538,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2
         }
-      });
+      }, beforeId); // Insert below labels
 
       addClickHandler(mapInstance, 'parking-circle');
       addHoverHandler(mapInstance, 'parking-circle');
       
-      console.log('✓ Added generic point layer');
+      console.log('✓ Added generic point layer (below labels)');
     } catch (err) {
       console.error('Error adding generic point layer:', err);
     }
