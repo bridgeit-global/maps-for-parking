@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -10,10 +10,19 @@ const MUMBAI_CENTER = {
   zoom: 11.5
 };
 
+const GEOCODE_DEBOUNCE_MS = 300;
+const FLY_TO_ZOOM = 15;
+
 interface MapViewProps {
   tilesetUrl?: string;
   tilesetId?: string;
   mapboxAccessToken?: string;
+}
+
+interface GeocodeFeature {
+  id: string;
+  place_name: string;
+  center: [number, number];
 }
 
 interface TilesetMetadata {
@@ -33,10 +42,16 @@ interface TilesetMetadata {
 export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  const searchMarkerRef = useRef<maplibregl.Marker | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tilesetMetadata, setTilesetMetadata] = useState<TilesetMetadata | null>(null);
   const [dataLayers, setDataLayers] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<GeocodeFeature[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch tileset metadata to understand the data structure
   useEffect(() => {
@@ -73,28 +88,108 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     fetchTilesetMetadata();
   }, [tilesetId]);
 
-  // Helper function to find the first label layer in the map style
-  const findFirstLabelLayerId = (mapInstance: maplibregl.Map): string | undefined => {
-    const layers = mapInstance.getStyle()?.layers;
-    if (!layers) return undefined;
-    
-    // Find the first layer that contains labels (typically symbol layers with text)
-    for (const layer of layers) {
-      // Label layers are typically symbol layers with text-field property
-      // Common naming patterns: *-label, *_label, place-*, poi-*
-      if (
-        layer.type === 'symbol' &&
-        (layer.id.includes('label') || 
-         layer.id.includes('place') || 
-         layer.id.includes('poi') ||
-         layer.id.includes('name') ||
-         layer.id.includes('text'))
-      ) {
-        return layer.id;
+  // Geocode search: debounced fetch from Mapbox Geocoding API v5
+  const fetchGeocode = useCallback(
+    async (query: string) => {
+      if (!query.trim() || !mapboxAccessToken) {
+        setSearchResults([]);
+        return;
       }
+      setIsSearching(true);
+      try {
+        const params = new URLSearchParams({
+          access_token: mapboxAccessToken,
+          proximity: `${MUMBAI_CENTER.lng},${MUMBAI_CENTER.lat}`,
+          limit: '5',
+        });
+        const res = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query.trim())}.json?${params}`
+        );
+        const data = await res.json();
+        const features: GeocodeFeature[] = (data.features || []).map((f: { id: string; place_name: string; center: [number, number] }) => ({
+          id: f.id,
+          place_name: f.place_name,
+          center: f.center,
+        }));
+        setSearchResults(features);
+      } catch (err) {
+        console.error('Geocoding error:', err);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [mapboxAccessToken]
+  );
+
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
     }
-    return undefined;
+    searchDebounceRef.current = setTimeout(() => {
+      fetchGeocode(searchQuery);
+      searchDebounceRef.current = null;
+    }, GEOCODE_DEBOUNCE_MS);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchQuery, fetchGeocode]);
+
+  const handleSelectPlace = useCallback(
+    (feature: GeocodeFeature) => {
+      const mapInstance = map.current;
+      if (!mapInstance) return;
+      if (searchMarkerRef.current) {
+        searchMarkerRef.current.remove();
+        searchMarkerRef.current = null;
+      }
+      const el = document.createElement('div');
+      el.className = 'search-marker-pin';
+      el.style.width = '32px';
+      el.style.height = '32px';
+      el.style.backgroundImage = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%233b82f6\'%3E%3Cpath d=\'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z\'/%3E%3C/svg%3E")';
+      el.style.backgroundSize = 'contain';
+      el.style.cursor = 'pointer';
+      searchMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat(feature.center)
+        .addTo(mapInstance);
+      mapInstance.flyTo({ center: feature.center, zoom: FLY_TO_ZOOM, duration: 1200 });
+      setSearchQuery('');
+      setSearchResults([]);
+      setSearchDropdownOpen(false);
+    },
+    []
+  );
+
+  // Parking layers are added without beforeId so they render on top of all basemap
+  // layers (roads, text, POIs), making them the most prominent visual element.
+
+  // Function to add tileset layers with dynamic styling
+  const addTilesetLayers = (
+    mapInstance: maplibregl.Map,
+    sourceId: string,
+    metadata: TilesetMetadata | null,
+    beforeId?: string
+  ) => {
+    if (!metadata?.vector_layers || metadata.vector_layers.length === 0) {
+      // Fallback: Add a generic layer if no metadata
+      addGenericParkingLayer(mapInstance, sourceId, beforeId);
+      return;
+    }
+
+    metadata.vector_layers.forEach((layer, index) => {
+      const layerId = layer.id;
+      const fields = layer.fields || {};
+      
+      console.log(`Adding layer: ${layerId}`, fields);
+
+      // Determine geometry type and add appropriate layer (below labels)
+      addLayerBasedOnFields(mapInstance, sourceId, layerId, fields, index, beforeId);
+    });
   };
+
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -161,12 +256,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             console.log('Adding tileset source:', sourceConfig);
             map.current.addSource(sourceId, sourceConfig);
 
-            // Find the first label layer to insert custom layers below it
-            const firstLabelLayerId = findFirstLabelLayerId(map.current);
-            console.log('First label layer found:', firstLabelLayerId);
-
-            // Add layers based on tileset metadata
-            addTilesetLayers(map.current, sourceId, tilesetMetadata, firstLabelLayerId);
+            // Add parking layers on top of all basemap layers (no beforeId)
+            addTilesetLayers(map.current, sourceId, tilesetMetadata);
           }
         } catch (err) {
           console.error('Error adding tileset:', err);
@@ -190,30 +281,6 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       }
     };
   }, [tilesetUrl, tilesetId, mapboxAccessToken, tilesetMetadata]);
-
-  // Function to add tileset layers with dynamic styling
-  const addTilesetLayers = (
-    mapInstance: maplibregl.Map,
-    sourceId: string,
-    metadata: TilesetMetadata | null,
-    beforeId?: string
-  ) => {
-    if (!metadata?.vector_layers || metadata.vector_layers.length === 0) {
-      // Fallback: Add a generic layer if no metadata
-      addGenericParkingLayer(mapInstance, sourceId, beforeId);
-      return;
-    }
-
-    metadata.vector_layers.forEach((layer, index) => {
-      const layerId = layer.id;
-      const fields = layer.fields || {};
-      
-      console.log(`Adding layer: ${layerId}`, fields);
-
-      // Determine geometry type and add appropriate layer (below labels)
-      addLayerBasedOnFields(mapInstance, sourceId, layerId, fields, index, beforeId);
-    });
-  };
 
   // Function to add layer with appropriate styling based on fields
   // beforeId parameter ensures layers are added below labels
@@ -261,6 +328,33 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       // Add click handler
       addClickHandler(mapInstance, fillLayerId);
       addHoverHandler(mapInstance, fillLayerId);
+
+      // Label layer for polygons (parking type at centroid)
+      if (styleExpressions.typeField) {
+        const labelLayerId = `${sourceLayer}-fill-label`;
+        try {
+          mapInstance.addLayer({
+            id: labelLayerId,
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            layout: {
+              'text-field': ['get', styleExpressions.typeField],
+              'text-size': 14,
+              'text-anchor': 'center',
+              'symbol-placement': 'point'
+            },
+            paint: {
+              'text-color': '#1f2937',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.5
+            }
+          }, beforeId);
+        } catch {
+          console.log(`Could not add polygon label layer: ${labelLayerId}`);
+        }
+      }
       
       console.log(`✓ Added polygon (fill) layer: ${fillLayerId} (below labels)`);
     } catch (err) {
@@ -285,6 +379,34 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
       addClickHandler(mapInstance, lineLayerId);
       addHoverHandler(mapInstance, lineLayerId);
+
+      // Label layer for polylines (parking type along the line)
+      if (styleExpressions.typeField) {
+        const lineLabelLayerId = `${sourceLayer}-line-label`;
+        try {
+          mapInstance.addLayer({
+            id: lineLabelLayerId,
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['==', ['geometry-type'], 'LineString'],
+            layout: {
+              'text-field': ['get', styleExpressions.typeField],
+              'text-size': 12,
+              'symbol-placement': 'line',
+              'text-rotation-alignment': 'map',
+              'text-pitch-alignment': 'map'
+            },
+            paint: {
+              'text-color': '#1f2937',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.5
+            }
+          }, beforeId);
+        } catch {
+          console.log(`Could not add polyline label layer: ${lineLabelLayerId}`);
+        }
+      }
       
       console.log(`✓ Added polyline (line) layer: ${lineLayerId} (below labels)`);
     } catch (err) {
@@ -379,7 +501,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         10, 3,
         15, 6,
         20, 12
-      ] as any
+      ] as any,
+      typeField: typeField ?? statusField ?? undefined
     };
   };
 
@@ -469,6 +592,30 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
       addClickHandler(mapInstance, 'parking-fill');
       addHoverHandler(mapInstance, 'parking-fill');
+
+      // Polygon label layer (parking type at centroid)
+      try {
+        mapInstance.addLayer({
+          id: 'parking-fill-label',
+          type: 'symbol',
+          source: sourceId,
+          'source-layer': sourceLayer,
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          layout: {
+            'text-field': ['get', 'parking_type'],
+            'text-size': 14,
+            'text-anchor': 'center',
+            'symbol-placement': 'point'
+          },
+          paint: {
+            'text-color': '#1f2937',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+          }
+        }, beforeId);
+      } catch (err) {
+        console.error('Error adding generic polygon label layer:', err);
+      }
       
       console.log('✓ Added generic polygon layer (below labels)');
     } catch (err) {
@@ -501,6 +648,31 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
       addClickHandler(mapInstance, 'parking-line');
       addHoverHandler(mapInstance, 'parking-line');
+
+      // Polyline label layer (parking type along the line)
+      try {
+        mapInstance.addLayer({
+          id: 'parking-line-label',
+          type: 'symbol',
+          source: sourceId,
+          'source-layer': sourceLayer,
+          filter: ['==', ['geometry-type'], 'LineString'],
+          layout: {
+            'text-field': ['get', 'parking_type'],
+            'text-size': 12,
+            'symbol-placement': 'line',
+            'text-rotation-alignment': 'map',
+            'text-pitch-alignment': 'map'
+          },
+          paint: {
+            'text-color': '#1f2937',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+          }
+        }, beforeId);
+      } catch (err) {
+        console.error('Error adding generic polyline label layer:', err);
+      }
       
       console.log('✓ Added generic polyline layer (below labels)');
     } catch (err) {
@@ -564,6 +736,77 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           <p>{error}</p>
         </div>
       )}
+
+      {/* Search bar: top-center, frosted glass */}
+      {mapboxAccessToken && (
+        <div className="absolute top-4 left-1/2 z-20 w-full max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-black/70 shadow-2xl backdrop-blur">
+          <div className="relative flex items-center gap-2 px-3 py-2">
+            <svg
+              className="h-5 w-5 shrink-0 text-white/50"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchDropdownOpen(true);
+              }}
+              onFocus={() => setSearchDropdownOpen(true)}
+              onBlur={() => setTimeout(() => setSearchDropdownOpen(false), 200)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchDropdownOpen(false);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="Search for a place..."
+              className="flex-1 min-w-0 rounded-lg border-0 bg-transparent py-1.5 text-sm text-white placeholder-white/50 focus:ring-0"
+              aria-label="Search for a place"
+              aria-autocomplete="list"
+            />
+            {isSearching && (
+              <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden />
+            )}
+          </div>
+          {searchDropdownOpen && (searchResults.length > 0 || isSearching) && (
+            <ul
+              className="max-h-60 overflow-auto border-t border-white/10 py-1"
+              role="listbox"
+            >
+              {isSearching && searchResults.length === 0 ? (
+                <li className="px-4 py-3 text-sm text-white/60">Searching...</li>
+              ) : (
+                searchResults.map((feature) => (
+                  <li
+                    key={feature.id}
+                    role="option"
+                    aria-selected={false}
+                    className="cursor-pointer px-4 py-2.5 text-sm text-white/90 hover:bg-white/10"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectPlace(feature);
+                    }}
+                  >
+                    <span className="font-medium">{feature.place_name.split(',')[0]}</span>
+                    {feature.place_name.includes(',') && (
+                      <span className="ml-1 text-white/60">
+                        {feature.place_name.split(',').slice(1).join(',').trim()}
+                      </span>
+                    )}
+                  </li>
+                ))
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div ref={mapContainer} className="w-full h-full" />
     </div>
   );

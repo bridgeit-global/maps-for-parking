@@ -41,45 +41,6 @@ export default function MapPage() {
           mapboxAccessToken={mapboxAccessToken}
         />
       </div>
-
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-20 w-60 rounded-2xl border border-white/10 bg-black/70 p-4 shadow-2xl backdrop-blur">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold tracking-tight">
-            Parking Zones
-          </h3>
-          <span className="rounded-full bg-[#137fec]/20 px-2 py-0.5 text-[10px] font-semibold text-[#6fb1ff]">
-            Live
-          </span>
-        </div>
-        <div className="space-y-2 text-xs text-white/70">
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded bg-blue-500" />
-            Paid Parking
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded bg-emerald-400" />
-            Free Parking
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded bg-red-400" />
-            Restricted
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded bg-yellow-400" />
-            Time Restricted
-          </div>
-        </div>
-        <p className="mt-3 text-[11px] text-white/50">
-          Click any zone for detailed information.
-        </p>
-        <Link
-          href="/debug/tileset"
-          className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold text-white/70 transition hover:border-white/20 hover:text-white"
-        >
-          Debug Tileset Data
-        </Link>
-      </div>
     </div>
   );
 }
