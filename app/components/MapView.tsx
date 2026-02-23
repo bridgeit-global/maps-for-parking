@@ -281,6 +281,26 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     // Handle map load
     map.current.on('load', () => {
       setIsLoading(false);
+
+      // Print camera angle details for use as default (center, zoom, bearing, pitch)
+      const center = map.current!.getCenter();
+      const zoom = map.current!.getZoom();
+      const bearing = map.current!.getBearing();
+      const pitch = map.current!.getPitch();
+      const camera = {
+        center: [center.lng, center.lat] as [number, number],
+        zoom: Math.round(zoom * 100) / 100,
+        bearing: Math.round(bearing * 100) / 100,
+        pitch: Math.round(pitch * 100) / 100
+      };
+      console.log(
+        '%cDefault camera (copy for map options)',
+        'font-weight:bold;',
+        '\nconst DEFAULT_CAMERA =',
+        JSON.stringify(camera, null, 2) + ';',
+        '\n// Or for MUMBAI_CENTER style:',
+        { lng: center.lng, lat: center.lat, zoom: camera.zoom }
+      );
       
       // Add tileset source if provided
       if (tilesetUrl || tilesetId) {
