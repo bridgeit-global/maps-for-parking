@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
+import MapView from "./components/MapView";
 
 export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -103,7 +103,7 @@ export default function Home() {
       </header>
 
       <main>
-        <section className="relative overflow-hidden">
+        <section id="hero" className="relative overflow-hidden">
           <div
             className={`absolute left-4 top-20 z-40 w-48 overflow-hidden rounded-2xl border border-white/10 bg-[#121c26] shadow-xl transition ${
               isMenuOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -150,38 +150,15 @@ export default function Home() {
             </div>
           </div>
           <div
-            id="hero"
-            className="relative flex min-h-[520px] items-center justify-center bg-cover bg-center px-6 py-16 text-center"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(11, 17, 24, 0.6) 0%, rgba(11, 17, 24, 0.4) 50%, rgba(11, 17, 24, 1) 100%), url("https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1600&q=80")',
-            }}
+            id="map"
+            className="relative h-[calc(100vh-4rem)] min-h-[70vh] w-full"
           >
-            <div className="relative z-10 max-w-xl space-y-4">
-              <p className="text-xs uppercase tracking-[0.4em] text-white/70">
-                {copy.tagline}
-              </p>
-              <h2 className="text-4xl font-bold leading-tight md:text-5xl">
-                {copy.headline}
-              </h2>
-              <p className="text-base text-white/80 md:text-lg">
-                {copy.subhead}
-              </p>
-              <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Link
-                  href="/map"
-                  className="inline-flex items-center justify-center rounded-full bg-[#137fec] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[#137fec]/40 transition hover:bg-[#0f6ed3]"
-                >
-                  {copy.ctaPrimary}
-                  <span className="ml-2 text-sm">→</span>
-                </Link>
-                <a
-                  href="#rules"
-                  className="inline-flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white/80 transition hover:border-white/40 hover:text-white"
-                >
-                  {copy.ctaSecondary}
-                </a>
-              </div>
+            <div className="absolute inset-0">
+              <MapView
+                tilesetUrl={process.env.NEXT_PUBLIC_TILESET_URL}
+                tilesetId={process.env.NEXT_PUBLIC_TILESET_ID}
+                mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}
+              />
             </div>
           </div>
         </section>

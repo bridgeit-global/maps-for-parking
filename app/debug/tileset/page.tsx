@@ -61,10 +61,10 @@ export default function TilesetDebugPage() {
         {/* Header */}
         <div className="mb-8">
           <Link
-            href="/map"
+            href="/"
             className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
           >
-            ← Back to Map
+            ← Back to Home
           </Link>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Tileset Debug Console
