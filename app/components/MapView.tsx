@@ -13,6 +13,43 @@ const MUMBAI_CENTER = {
 const GEOCODE_DEBOUNCE_MS = 300;
 const FLY_TO_ZOOM = 15;
 
+const PARKING_COLORS = {
+  blue: '#3b82f6',
+  lightGreen: '#90EE90',
+  lightGray: '#9ca3af',
+  defaultGray: '#6b7280'
+} as const;
+
+const NO_PARKING_ICON_URL = '/icons/no-parking.png';
+const NO_PARKING_ICON_ID = 'no-parking-icon';
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+  });
+}
+
+function getParkingTypeColorExpression(): (string | string[])[] {
+  const dayOfMonth = new Date().getDate();
+  const isEvenDay = dayOfMonth % 2 === 0;
+  const { blue, lightGreen, lightGray, defaultGray } = PARKING_COLORS;
+  return [
+    'match',
+    ['get', 'parking_type'],
+    'onStreet', blue,
+    'offStreet', blue,
+    'free', lightGreen,
+    'even', isEvenDay ? lightGreen : lightGray,
+    'odd', !isEvenDay ? lightGreen : lightGray,
+    'no', lightGray,
+    defaultGray
+  ];
+}
+
 interface MapViewProps {
   tilesetUrl?: string;
   tilesetId?: string;
@@ -52,6 +89,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const [isSearching, setIsSearching] = useState(false);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noParkingIconAddedRef = useRef(false);
 
   // Fetch tileset metadata to understand the data structure
   useEffect(() => {
@@ -256,8 +294,21 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             console.log('Adding tileset source:', sourceConfig);
             map.current.addSource(sourceId, sourceConfig);
 
-            // Add parking layers on top of all basemap layers (no beforeId)
-            addTilesetLayers(map.current, sourceId, tilesetMetadata);
+            // Load no-parking icon then add parking layers
+            (async () => {
+              try {
+                const img = await loadImage(NO_PARKING_ICON_URL);
+                if (map.current) {
+                  map.current.addImage(NO_PARKING_ICON_ID, img, { pixelRatio: 2 });
+                  noParkingIconAddedRef.current = true;
+                }
+              } catch (err) {
+                console.warn('No-parking icon not loaded, skipping icon layers:', err);
+              }
+              if (map.current) {
+                addTilesetLayers(map.current, sourceId, tilesetMetadata);
+              }
+            })();
           }
         } catch (err) {
           console.error('Error adding tileset:', err);
@@ -343,7 +394,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               'text-field': ['get', styleExpressions.typeField],
               'text-size': 14,
               'text-anchor': 'center',
-              'symbol-placement': 'point'
+              'symbol-placement': 'point',
+              'text-rotation-alignment': 'viewport'
             },
             paint: {
               'text-color': '#1f2937',
@@ -353,6 +405,29 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           }, beforeId);
         } catch {
           console.log(`Could not add polygon label layer: ${labelLayerId}`);
+        }
+        // No-parking icon for polygons where type is 'no'
+        if (noParkingIconAddedRef.current) {
+          try {
+            mapInstance.addLayer({
+              id: `${sourceLayer}-fill-no-icon`,
+              type: 'symbol',
+              source: sourceId,
+              'source-layer': sourceLayer,
+              filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['==', ['get', styleExpressions.typeField], 'no']],
+              layout: {
+                'icon-image': NO_PARKING_ICON_ID,
+                'icon-size': 1.0,
+                'icon-anchor': 'center',
+                'icon-rotation-alignment': 'viewport',
+                'symbol-placement': 'point'
+              }
+            }, beforeId);
+            addClickHandler(mapInstance, `${sourceLayer}-fill-no-icon`);
+            addHoverHandler(mapInstance, `${sourceLayer}-fill-no-icon`);
+          } catch {
+            // ignore
+          }
         }
       }
       
@@ -380,7 +455,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       addClickHandler(mapInstance, lineLayerId);
       addHoverHandler(mapInstance, lineLayerId);
 
-      // Label layer for polylines (parking type along the line)
+      // Label layer for polylines (horizontal label at line centroid)
       if (styleExpressions.typeField) {
         const lineLabelLayerId = `${sourceLayer}-line-label`;
         try {
@@ -393,9 +468,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             layout: {
               'text-field': ['get', styleExpressions.typeField],
               'text-size': 12,
-              'symbol-placement': 'line',
-              'text-rotation-alignment': 'map',
-              'text-pitch-alignment': 'map'
+              'text-anchor': 'center',
+              'symbol-placement': 'line-center',
+              'text-rotation-alignment': 'viewport'
             },
             paint: {
               'text-color': '#1f2937',
@@ -405,6 +480,29 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           }, beforeId);
         } catch {
           console.log(`Could not add polyline label layer: ${lineLabelLayerId}`);
+        }
+        // No-parking icon for lines where type is 'no'
+        if (noParkingIconAddedRef.current) {
+          try {
+            mapInstance.addLayer({
+              id: `${sourceLayer}-line-no-icon`,
+              type: 'symbol',
+              source: sourceId,
+              'source-layer': sourceLayer,
+              filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', styleExpressions.typeField], 'no']],
+              layout: {
+                'icon-image': NO_PARKING_ICON_ID,
+                'icon-size': 0.95,
+                'icon-anchor': 'center',
+                'icon-rotation-alignment': 'viewport',
+                'symbol-placement': 'line-center'
+              }
+            }, beforeId);
+            addClickHandler(mapInstance, `${sourceLayer}-line-no-icon`);
+            addHoverHandler(mapInstance, `${sourceLayer}-line-no-icon`);
+          } catch {
+            // ignore
+          }
         }
       }
       
@@ -433,6 +531,30 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
       addClickHandler(mapInstance, circleLayerId);
       addHoverHandler(mapInstance, circleLayerId);
+
+      // No-parking icon for points where type is 'no'
+      if (noParkingIconAddedRef.current && styleExpressions.typeField) {
+        try {
+          const noIconLayerId = `${sourceLayer}-circle-no-icon`;
+          mapInstance.addLayer({
+            id: noIconLayerId,
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', styleExpressions.typeField], 'no']],
+            layout: {
+              'icon-image': NO_PARKING_ICON_ID,
+              'icon-size': 1.1,
+              'icon-anchor': 'center',
+              'icon-rotation-alignment': 'viewport'
+            }
+          }, beforeId);
+          addClickHandler(mapInstance, noIconLayerId);
+          addHoverHandler(mapInstance, noIconLayerId);
+        } catch {
+          // ignore
+        }
+      }
       
       console.log(`✓ Added point (circle) layer: ${circleLayerId} (below labels)`);
     } catch (err) {
@@ -458,32 +580,36 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       f.toLowerCase().includes('availability')
     );
 
-    // Default color expression
-    let colorExpression: any = '#3b82f6'; // default blue
+    const blue = '#3b82f6';           // onStreet, offStreet
+    const lightGreen = '#166534';      // free; even/odd on matching date
+    const lightGray = '#9ca3af';     // no; even/odd on non-matching date
+    const defaultGray = '#6b7280';
+
+    const dayOfMonth = new Date().getDate();
+    const isEvenDay = dayOfMonth % 2 === 0;
+
+    let colorExpression: any = defaultGray;
 
     if (typeField) {
-      // Create color expression based on type field
       colorExpression = [
         'match',
         ['get', typeField],
-        'paid', '#3b82f6',        // blue
-        'free', '#10b981',        // green
-        'restricted', '#ef4444',  // red
-        'time-restricted', '#f59e0b', // amber
-        'time_restricted', '#f59e0b',
-        'permit', '#8b5cf6',      // purple
-        'disabled', '#6366f1',    // indigo
-        'loading', '#f97316',     // orange
-        '#6b7280'                 // gray (default)
+        'onStreet', blue,
+        'offStreet', blue,
+        'free', lightGreen,
+        'even', isEvenDay ? lightGreen : lightGray,
+        'odd', !isEvenDay ? lightGreen : lightGray,
+        'no', lightGray,
+        defaultGray
       ];
     } else if (statusField) {
       colorExpression = [
         'match',
         ['get', statusField],
-        'available', '#10b981',   // green
-        'occupied', '#ef4444',    // red
-        'reserved', '#f59e0b',    // amber
-        '#6b7280'                 // gray (default)
+        'available', lightGreen,
+        'occupied', '#ef4444',
+        'reserved', '#f59e0b',
+        defaultGray
       ];
     }
 
@@ -562,16 +688,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         'source-layer': sourceLayer,
         filter: ['==', ['geometry-type'], 'Polygon'],
         paint: {
-          'fill-color': [
-            'match',
-            ['get', 'parking_type'],
-            'paid', '#3b82f6',
-            'free', '#10b981',
-            'restricted', '#ef4444',
-            'time-restricted', '#f59e0b',
-            'time_restricted', '#f59e0b',
-            '#6b7280'
-          ],
+          'fill-color': getParkingTypeColorExpression() as maplibregl.ExpressionSpecification,
           'fill-opacity': 0.6
         }
       }, beforeId); // Insert below labels
@@ -605,7 +722,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             'text-field': ['get', 'parking_type'],
             'text-size': 14,
             'text-anchor': 'center',
-            'symbol-placement': 'point'
+            'symbol-placement': 'point',
+            'text-rotation-alignment': 'viewport'
           },
           paint: {
             'text-color': '#1f2937',
@@ -615,6 +733,28 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         }, beforeId);
       } catch (err) {
         console.error('Error adding generic polygon label layer:', err);
+      }
+      if (noParkingIconAddedRef.current) {
+        try {
+          mapInstance.addLayer({
+            id: 'parking-fill-no-icon',
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['==', ['get', 'parking_type'], 'no']],
+            layout: {
+              'icon-image': NO_PARKING_ICON_ID,
+              'icon-size': 1.0,
+              'icon-anchor': 'center',
+              'icon-rotation-alignment': 'viewport',
+              'symbol-placement': 'point'
+            }
+          }, beforeId);
+          addClickHandler(mapInstance, 'parking-fill-no-icon');
+          addHoverHandler(mapInstance, 'parking-fill-no-icon');
+        } catch {
+          // ignore
+        }
       }
       
       console.log('✓ Added generic polygon layer (below labels)');
@@ -631,16 +771,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         'source-layer': sourceLayer,
         filter: ['==', ['geometry-type'], 'LineString'],
         paint: {
-          'line-color': [
-            'match',
-            ['get', 'parking_type'],
-            'paid', '#3b82f6',
-            'free', '#10b981',
-            'restricted', '#ef4444',
-            'time-restricted', '#f59e0b',
-            'time_restricted', '#f59e0b',
-            '#6b7280'
-          ],
+          'line-color': getParkingTypeColorExpression() as maplibregl.ExpressionSpecification,
           'line-width': 3,
           'line-opacity': 0.9
         }
@@ -649,7 +780,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       addClickHandler(mapInstance, 'parking-line');
       addHoverHandler(mapInstance, 'parking-line');
 
-      // Polyline label layer (parking type along the line)
+      // Polyline label layer (horizontal label at line centroid)
       try {
         mapInstance.addLayer({
           id: 'parking-line-label',
@@ -660,9 +791,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           layout: {
             'text-field': ['get', 'parking_type'],
             'text-size': 12,
-            'symbol-placement': 'line',
-            'text-rotation-alignment': 'map',
-            'text-pitch-alignment': 'map'
+            'text-anchor': 'center',
+            'symbol-placement': 'point',
+            'text-rotation-alignment': 'viewport'
           },
           paint: {
             'text-color': '#1f2937',
@@ -672,6 +803,28 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         }, beforeId);
       } catch (err) {
         console.error('Error adding generic polyline label layer:', err);
+      }
+      if (noParkingIconAddedRef.current) {
+        try {
+          mapInstance.addLayer({
+            id: 'parking-line-no-icon',
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'parking_type'], 'no']],
+            layout: {
+              'icon-image': NO_PARKING_ICON_ID,
+              'icon-size': 0.95,
+              'icon-anchor': 'center',
+              'icon-rotation-alignment': 'viewport',
+              'symbol-placement': 'line-center'
+            }
+          }, beforeId);
+          addClickHandler(mapInstance, 'parking-line-no-icon');
+          addHoverHandler(mapInstance, 'parking-line-no-icon');
+        } catch {
+          // ignore
+        }
       }
       
       console.log('✓ Added generic polyline layer (below labels)');
@@ -688,16 +841,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         'source-layer': sourceLayer,
         filter: ['==', ['geometry-type'], 'Point'],
         paint: {
-          'circle-color': [
-            'match',
-            ['get', 'parking_type'],
-            'paid', '#3b82f6',
-            'free', '#10b981',
-            'restricted', '#ef4444',
-            'time-restricted', '#f59e0b',
-            'time_restricted', '#f59e0b',
-            '#6b7280'
-          ],
+          'circle-color': getParkingTypeColorExpression() as maplibregl.ExpressionSpecification,
           'circle-radius': [
             'interpolate',
             ['linear'],
@@ -714,6 +858,27 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
       addClickHandler(mapInstance, 'parking-circle');
       addHoverHandler(mapInstance, 'parking-circle');
+      if (noParkingIconAddedRef.current) {
+        try {
+          mapInstance.addLayer({
+            id: 'parking-circle-no-icon',
+            type: 'symbol',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'parking_type'], 'no']],
+            layout: {
+              'icon-image': NO_PARKING_ICON_ID,
+              'icon-size': 1.1,
+              'icon-anchor': 'center',
+              'icon-rotation-alignment': 'viewport'
+            }
+          }, beforeId);
+          addClickHandler(mapInstance, 'parking-circle-no-icon');
+          addHoverHandler(mapInstance, 'parking-circle-no-icon');
+        } catch {
+          // ignore
+        }
+      }
       
       console.log('✓ Added generic point layer (below labels)');
     } catch (err) {
