@@ -20,8 +20,13 @@ const PARKING_COLORS = {
   defaultGray: '#6b7280'
 } as const;
 
-const NO_PARKING_ICON_URL = '/icons/no-parking.png';
-const NO_PARKING_ICON_ID = 'no-parking-icon';
+const PARKING_TYPE_ICONS = {
+  no: { url: '/icons/no-parking.png', id: 'no-parking-icon' },
+  free: { url: '/icons/free-parking.png', id: 'free-parking-icon' },
+  onStreet: { url: '/icons/street-parking.png', id: 'on-street-icon' },
+  offStreet: { url: '/icons/off-street-parking.png', id: 'off-street-icon' }
+} as const;
+const BLANK_ICON_ID = 'blank-icon';
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -31,6 +36,22 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     img.crossOrigin = 'anonymous';
     img.src = url;
   });
+}
+
+/** Icon-image expression: no, free, onStreet, offStreet; even/odd show free icon on matching date. */
+function getParkingTypeIconImageExpression(typeField: string): (string | string[])[] {
+  const isEvenDay = new Date().getDate() % 2 === 0;
+  return [
+    'match',
+    ['get', typeField],
+    'no', PARKING_TYPE_ICONS.no.id,
+    'free', PARKING_TYPE_ICONS.free.id,
+    'onStreet', PARKING_TYPE_ICONS.onStreet.id,
+    'offStreet', PARKING_TYPE_ICONS.offStreet.id,
+    'even', isEvenDay ? PARKING_TYPE_ICONS.free.id : BLANK_ICON_ID,
+    'odd', !isEvenDay ? PARKING_TYPE_ICONS.free.id : BLANK_ICON_ID,
+    BLANK_ICON_ID
+  ];
 }
 
 function getParkingTypeColorExpression(): (string | string[])[] {
@@ -89,7 +110,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const [isSearching, setIsSearching] = useState(false);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const noParkingIconAddedRef = useRef(false);
+  const parkingTypeIconsLoadedRef = useRef(false);
 
   // Fetch tileset metadata to understand the data structure
   useEffect(() => {
@@ -294,16 +315,26 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             console.log('Adding tileset source:', sourceConfig);
             map.current.addSource(sourceId, sourceConfig);
 
-            // Load no-parking icon then add parking layers
+            // Load all parking type icons then add parking layers
             (async () => {
+              if (!map.current) return;
               try {
-                const img = await loadImage(NO_PARKING_ICON_URL);
-                if (map.current) {
-                  map.current.addImage(NO_PARKING_ICON_ID, img, { pixelRatio: 2 });
-                  noParkingIconAddedRef.current = true;
-                }
+                const results = await Promise.allSettled([
+                  loadImage(PARKING_TYPE_ICONS.no.url),
+                  loadImage(PARKING_TYPE_ICONS.free.url),
+                  loadImage(PARKING_TYPE_ICONS.onStreet.url),
+                  loadImage(PARKING_TYPE_ICONS.offStreet.url)
+                ]);
+                const [noImg, freeImg, onStreetImg, offStreetImg] = results;
+                if (noImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.no.id, noImg.value, { pixelRatio: 2 });
+                if (freeImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.free.id, freeImg.value, { pixelRatio: 2 });
+                if (onStreetImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.onStreet.id, onStreetImg.value, { pixelRatio: 2 });
+                if (offStreetImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.offStreet.id, offStreetImg.value, { pixelRatio: 2 });
+                // 1x1 transparent pixel for "no icon" (e.g. even on odd day)
+                map.current.addImage(BLANK_ICON_ID, { width: 1, height: 1, data: new Uint8Array(4) }, { pixelRatio: 1 });
+                parkingTypeIconsLoadedRef.current = true;
               } catch (err) {
-                console.warn('No-parking icon not loaded, skipping icon layers:', err);
+                console.warn('Parking type icons not loaded, skipping icon layers:', err);
               }
               if (map.current) {
                 addTilesetLayers(map.current, sourceId, tilesetMetadata);
@@ -406,25 +437,30 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         } catch {
           console.log(`Could not add polygon label layer: ${labelLayerId}`);
         }
-        // No-parking icon for polygons where type is 'no'
-        if (noParkingIconAddedRef.current) {
+        // Parking type icons for polygons (no, free, onStreet, offStreet, even→free, odd→free)
+        if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
           try {
+            const typeIconLayerId = `${sourceLayer}-fill-type-icon`;
             mapInstance.addLayer({
-              id: `${sourceLayer}-fill-no-icon`,
+              id: typeIconLayerId,
               type: 'symbol',
               source: sourceId,
               'source-layer': sourceLayer,
-              filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['==', ['get', styleExpressions.typeField], 'no']],
+              filter: [
+                'all',
+                ['==', ['geometry-type'], 'Polygon'],
+                ['in', ['get', styleExpressions.typeField], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
+              ],
               layout: {
-                'icon-image': NO_PARKING_ICON_ID,
+                'icon-image': getParkingTypeIconImageExpression(styleExpressions.typeField) as maplibregl.ExpressionSpecification,
                 'icon-size': 1.0,
                 'icon-anchor': 'center',
                 'icon-rotation-alignment': 'viewport',
                 'symbol-placement': 'point'
               }
             }, beforeId);
-            addClickHandler(mapInstance, `${sourceLayer}-fill-no-icon`);
-            addHoverHandler(mapInstance, `${sourceLayer}-fill-no-icon`);
+            addClickHandler(mapInstance, typeIconLayerId);
+            addHoverHandler(mapInstance, typeIconLayerId);
           } catch {
             // ignore
           }
@@ -481,25 +517,30 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         } catch {
           console.log(`Could not add polyline label layer: ${lineLabelLayerId}`);
         }
-        // No-parking icon for lines where type is 'no'
-        if (noParkingIconAddedRef.current) {
+        // Parking type icons for lines (no, free, onStreet, offStreet, even→free, odd→free)
+        if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
           try {
+            const typeIconLayerId = `${sourceLayer}-line-type-icon`;
             mapInstance.addLayer({
-              id: `${sourceLayer}-line-no-icon`,
+              id: typeIconLayerId,
               type: 'symbol',
               source: sourceId,
               'source-layer': sourceLayer,
-              filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', styleExpressions.typeField], 'no']],
+              filter: [
+                'all',
+                ['==', ['geometry-type'], 'LineString'],
+                ['in', ['get', styleExpressions.typeField], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
+              ],
               layout: {
-                'icon-image': NO_PARKING_ICON_ID,
+                'icon-image': getParkingTypeIconImageExpression(styleExpressions.typeField) as maplibregl.ExpressionSpecification,
                 'icon-size': 0.95,
                 'icon-anchor': 'center',
                 'icon-rotation-alignment': 'viewport',
                 'symbol-placement': 'line-center'
               }
             }, beforeId);
-            addClickHandler(mapInstance, `${sourceLayer}-line-no-icon`);
-            addHoverHandler(mapInstance, `${sourceLayer}-line-no-icon`);
+            addClickHandler(mapInstance, typeIconLayerId);
+            addHoverHandler(mapInstance, typeIconLayerId);
           } catch {
             // ignore
           }
@@ -532,25 +573,29 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       addClickHandler(mapInstance, circleLayerId);
       addHoverHandler(mapInstance, circleLayerId);
 
-      // No-parking icon for points where type is 'no'
-      if (noParkingIconAddedRef.current && styleExpressions.typeField) {
+      // Parking type icons for points (no, free, onStreet, offStreet, even→free, odd→free)
+      if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
         try {
-          const noIconLayerId = `${sourceLayer}-circle-no-icon`;
+          const typeIconLayerId = `${sourceLayer}-circle-type-icon`;
           mapInstance.addLayer({
-            id: noIconLayerId,
+            id: typeIconLayerId,
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', styleExpressions.typeField], 'no']],
+            filter: [
+              'all',
+              ['==', ['geometry-type'], 'Point'],
+              ['in', ['get', styleExpressions.typeField], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
+            ],
             layout: {
-              'icon-image': NO_PARKING_ICON_ID,
+              'icon-image': getParkingTypeIconImageExpression(styleExpressions.typeField) as maplibregl.ExpressionSpecification,
               'icon-size': 1.1,
               'icon-anchor': 'center',
               'icon-rotation-alignment': 'viewport'
             }
           }, beforeId);
-          addClickHandler(mapInstance, noIconLayerId);
-          addHoverHandler(mapInstance, noIconLayerId);
+          addClickHandler(mapInstance, typeIconLayerId);
+          addHoverHandler(mapInstance, typeIconLayerId);
         } catch {
           // ignore
         }
@@ -734,24 +779,28 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       } catch (err) {
         console.error('Error adding generic polygon label layer:', err);
       }
-      if (noParkingIconAddedRef.current) {
+      if (parkingTypeIconsLoadedRef.current) {
         try {
           mapInstance.addLayer({
-            id: 'parking-fill-no-icon',
+            id: 'parking-fill-type-icon',
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['==', ['get', 'parking_type'], 'no']],
+            filter: [
+              'all',
+              ['==', ['geometry-type'], 'Polygon'],
+              ['in', ['get', 'parking_type'], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
+            ],
             layout: {
-              'icon-image': NO_PARKING_ICON_ID,
+              'icon-image': getParkingTypeIconImageExpression('parking_type') as maplibregl.ExpressionSpecification,
               'icon-size': 1.0,
               'icon-anchor': 'center',
               'icon-rotation-alignment': 'viewport',
               'symbol-placement': 'point'
             }
           }, beforeId);
-          addClickHandler(mapInstance, 'parking-fill-no-icon');
-          addHoverHandler(mapInstance, 'parking-fill-no-icon');
+          addClickHandler(mapInstance, 'parking-fill-type-icon');
+          addHoverHandler(mapInstance, 'parking-fill-type-icon');
         } catch {
           // ignore
         }
@@ -804,24 +853,28 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       } catch (err) {
         console.error('Error adding generic polyline label layer:', err);
       }
-      if (noParkingIconAddedRef.current) {
+      if (parkingTypeIconsLoadedRef.current) {
         try {
           mapInstance.addLayer({
-            id: 'parking-line-no-icon',
+            id: 'parking-line-type-icon',
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'parking_type'], 'no']],
+            filter: [
+              'all',
+              ['==', ['geometry-type'], 'LineString'],
+              ['in', ['get', 'parking_type'], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
+            ],
             layout: {
-              'icon-image': NO_PARKING_ICON_ID,
+              'icon-image': getParkingTypeIconImageExpression('parking_type') as maplibregl.ExpressionSpecification,
               'icon-size': 0.95,
               'icon-anchor': 'center',
               'icon-rotation-alignment': 'viewport',
               'symbol-placement': 'line-center'
             }
           }, beforeId);
-          addClickHandler(mapInstance, 'parking-line-no-icon');
-          addHoverHandler(mapInstance, 'parking-line-no-icon');
+          addClickHandler(mapInstance, 'parking-line-type-icon');
+          addHoverHandler(mapInstance, 'parking-line-type-icon');
         } catch {
           // ignore
         }
@@ -858,23 +911,27 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
       addClickHandler(mapInstance, 'parking-circle');
       addHoverHandler(mapInstance, 'parking-circle');
-      if (noParkingIconAddedRef.current) {
+      if (parkingTypeIconsLoadedRef.current) {
         try {
           mapInstance.addLayer({
-            id: 'parking-circle-no-icon',
+            id: 'parking-circle-type-icon',
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'parking_type'], 'no']],
+            filter: [
+              'all',
+              ['==', ['geometry-type'], 'Point'],
+              ['in', ['get', 'parking_type'], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
+            ],
             layout: {
-              'icon-image': NO_PARKING_ICON_ID,
+              'icon-image': getParkingTypeIconImageExpression('parking_type') as maplibregl.ExpressionSpecification,
               'icon-size': 1.1,
               'icon-anchor': 'center',
               'icon-rotation-alignment': 'viewport'
             }
           }, beforeId);
-          addClickHandler(mapInstance, 'parking-circle-no-icon');
-          addHoverHandler(mapInstance, 'parking-circle-no-icon');
+          addClickHandler(mapInstance, 'parking-circle-type-icon');
+          addHoverHandler(mapInstance, 'parking-circle-type-icon');
         } catch {
           // ignore
         }
