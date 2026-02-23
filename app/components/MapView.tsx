@@ -4,10 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+// Default camera: Mumbai peninsula overview (entire island + surroundings)
 const MUMBAI_CENTER = {
-  lng: 72.8777,
-  lat: 19.0760,
-  zoom: 11.5
+  lng: 72.83,
+  lat: 19.0,
+  zoom: 12.5,
+  bearing: 15,
+  pitch: 45
 };
 
 const GEOCODE_DEBOUNCE_MS = 300;
@@ -258,10 +261,10 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-      center: tilesetMetadata?.center 
-        ? [tilesetMetadata.center[0], tilesetMetadata.center[1]] 
-        : [MUMBAI_CENTER.lng, MUMBAI_CENTER.lat],
-      zoom: tilesetMetadata?.center?.[2] || MUMBAI_CENTER.zoom
+      center: [MUMBAI_CENTER.lng, MUMBAI_CENTER.lat],
+      zoom: MUMBAI_CENTER.zoom,
+      bearing: MUMBAI_CENTER.bearing ?? 0,
+      pitch: MUMBAI_CENTER.pitch ?? 0
     });
 
     // Add navigation controls
