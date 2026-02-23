@@ -25,11 +25,9 @@ const PARKING_COLORS = {
 
 const PARKING_TYPE_ICONS = {
   no: { url: '/icons/no-parking.png', id: 'no-parking-icon' },
-  free: { url: '/icons/free-parking.png', id: 'free-parking-icon' },
   onStreet: { url: '/icons/street-parking.png', id: 'on-street-icon' },
   offStreet: { url: '/icons/off-street-parking.png', id: 'off-street-icon' }
 } as const;
-const BLANK_ICON_ID = 'blank-icon';
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -41,34 +39,31 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Icon-image expression: no, free, onStreet, offStreet; even/odd show free icon on matching date. */
+/** Icon-image: no-parking for no, free, even, odd; onStreet/offStreet keep their icons. */
 function getParkingTypeIconImageExpression(typeField: string): (string | string[])[] {
-  const isEvenDay = new Date().getDate() % 2 === 0;
   return [
     'match',
     ['get', typeField],
     'no', PARKING_TYPE_ICONS.no.id,
-    'free', PARKING_TYPE_ICONS.free.id,
+    'free', PARKING_TYPE_ICONS.no.id,
     'onStreet', PARKING_TYPE_ICONS.onStreet.id,
     'offStreet', PARKING_TYPE_ICONS.offStreet.id,
-    'even', isEvenDay ? PARKING_TYPE_ICONS.free.id : BLANK_ICON_ID,
-    'odd', !isEvenDay ? PARKING_TYPE_ICONS.free.id : BLANK_ICON_ID,
-    BLANK_ICON_ID
+    'even', PARKING_TYPE_ICONS.no.id,
+    'odd', PARKING_TYPE_ICONS.no.id,
+    PARKING_TYPE_ICONS.no.id
   ];
 }
 
 function getParkingTypeColorExpression(): (string | string[])[] {
-  const dayOfMonth = new Date().getDate();
-  const isEvenDay = dayOfMonth % 2 === 0;
-  const { blue, lightGreen, lightGray, defaultGray } = PARKING_COLORS;
+  const { blue, lightGray, defaultGray } = PARKING_COLORS;
   return [
     'match',
     ['get', 'parking_type'],
     'onStreet', blue,
     'offStreet', blue,
-    'free', lightGreen,
-    'even', isEvenDay ? lightGreen : lightGray,
-    'odd', !isEvenDay ? lightGreen : lightGray,
+    'free', lightGray,
+    'even', lightGray,
+    'odd', lightGray,
     'no', lightGray,
     defaultGray
   ];
@@ -344,17 +339,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               try {
                 const results = await Promise.allSettled([
                   loadImage(PARKING_TYPE_ICONS.no.url),
-                  loadImage(PARKING_TYPE_ICONS.free.url),
                   loadImage(PARKING_TYPE_ICONS.onStreet.url),
                   loadImage(PARKING_TYPE_ICONS.offStreet.url)
                 ]);
-                const [noImg, freeImg, onStreetImg, offStreetImg] = results;
+                const [noImg, onStreetImg, offStreetImg] = results;
                 if (noImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.no.id, noImg.value, { pixelRatio: 2 });
-                if (freeImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.free.id, freeImg.value, { pixelRatio: 2 });
                 if (onStreetImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.onStreet.id, onStreetImg.value, { pixelRatio: 2 });
                 if (offStreetImg.status === 'fulfilled') map.current.addImage(PARKING_TYPE_ICONS.offStreet.id, offStreetImg.value, { pixelRatio: 2 });
-                // 1x1 transparent pixel for "no icon" (e.g. even on odd day)
-                map.current.addImage(BLANK_ICON_ID, { width: 1, height: 1, data: new Uint8Array(4) }, { pixelRatio: 1 });
                 parkingTypeIconsLoadedRef.current = true;
               } catch (err) {
                 console.warn('Parking type icons not loaded, skipping icon layers:', err);
@@ -460,7 +451,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         } catch {
           console.log(`Could not add polygon label layer: ${labelLayerId}`);
         }
-        // Parking type icons for polygons (no, free, onStreet, offStreet, even→free, odd→free)
+        // Parking type icons for polygons (no, free, even, odd → no-parking; onStreet, offStreet)
         if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
           try {
             const typeIconLayerId = `${sourceLayer}-fill-type-icon`;
@@ -540,7 +531,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         } catch {
           console.log(`Could not add polyline label layer: ${lineLabelLayerId}`);
         }
-        // Parking type icons for lines (no, free, onStreet, offStreet, even→free, odd→free)
+        // Parking type icons for lines (no, free, even, odd → no-parking; onStreet, offStreet)
         if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
           try {
             const typeIconLayerId = `${sourceLayer}-line-type-icon`;
@@ -596,7 +587,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       addClickHandler(mapInstance, circleLayerId);
       addHoverHandler(mapInstance, circleLayerId);
 
-      // Parking type icons for points (no, free, onStreet, offStreet, even→free, odd→free)
+      // Parking type icons for points (no, free, even, odd → no-parking; onStreet, offStreet)
       if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
         try {
           const typeIconLayerId = `${sourceLayer}-circle-type-icon`;
@@ -649,12 +640,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     );
 
     const blue = '#3b82f6';           // onStreet, offStreet
-    const lightGreen = '#166534';      // free; even/odd on matching date
-    const lightGray = '#9ca3af';     // no; even/odd on non-matching date
+    const lightGray = '#9ca3af';      // no, free, even, odd (no parking)
+    const lightGreen = '#166534';      // status: available
     const defaultGray = '#6b7280';
-
-    const dayOfMonth = new Date().getDate();
-    const isEvenDay = dayOfMonth % 2 === 0;
 
     let colorExpression: any = defaultGray;
 
@@ -664,9 +652,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         ['get', typeField],
         'onStreet', blue,
         'offStreet', blue,
-        'free', lightGreen,
-        'even', isEvenDay ? lightGreen : lightGray,
-        'odd', !isEvenDay ? lightGreen : lightGray,
+        'free', lightGray,
+        'even', lightGray,
+        'odd', lightGray,
         'no', lightGray,
         defaultGray
       ];
