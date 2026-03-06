@@ -54,19 +54,127 @@ function getParkingTypeIconImageExpression(typeField: string): (string | string[
   ];
 }
 
-function getParkingTypeColorExpression(): (string | string[])[] {
+/** Current time as decimal hours 0-24. */
+function getCurrentTimeHours(): number {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+
+/** Build fill/line/circle color expression: no-parking (gray) only when rules apply; else blue/default. */
+function getNoParkingAwareColorExpression(
+  typeField: string,
+  openingField: string | undefined,
+  closingField: string | undefined,
+  currentDay: number,
+  currentTime: number
+): maplibregl.ExpressionSpecification {
   const { blue, lightGray, defaultGray } = PARKING_COLORS;
+  const dayLiteral = ['literal', currentDay] as [string, number];
+  const timeLiteral = ['literal', currentTime] as [string, number];
+
+  const freeColorExpression: maplibregl.ExpressionSpecification =
+    (!openingField || !closingField
+      ? blue
+      : [
+          'case',
+          ['all', ['==', ['coalesce', ['get', openingField], 0], 0], ['==', ['coalesce', ['get', closingField], 24], 24]],
+          blue,
+          ['>=', ['coalesce', ['get', closingField], 24], ['coalesce', ['get', openingField], 0]],
+          [
+            'case',
+            [
+              'any',
+              ['<', timeLiteral, ['coalesce', ['get', openingField], 0]],
+              ['>=', timeLiteral, ['coalesce', ['get', closingField], 24]]
+            ],
+            lightGray,
+            blue
+          ],
+          [
+            'case',
+            [
+              'all',
+              ['>=', timeLiteral, ['coalesce', ['get', closingField], 24]],
+              ['<', timeLiteral, ['coalesce', ['get', openingField], 0]]
+            ],
+            lightGray,
+            blue
+          ]
+        ]) as unknown as maplibregl.ExpressionSpecification;
+
   return [
-    'match',
-    ['get', 'parking_type'],
-    'onStreet', blue,
-    'offStreet', blue,
-    'free', lightGray,
-    'even', lightGray,
-    'odd', lightGray,
-    'no', lightGray,
+    'case',
+    ['==', ['get', typeField], 'no'],
+    lightGray,
+    ['==', ['get', typeField], 'onStreet'],
+    blue,
+    ['==', ['get', typeField], 'offStreet'],
+    blue,
+    ['==', ['get', typeField], 'odd'],
+    ['case', ['==', ['%', dayLiteral, 2], 0], lightGray, blue],
+    ['==', ['get', typeField], 'even'],
+    ['case', ['==', ['%', dayLiteral, 2], 1], lightGray, blue],
+    ['==', ['get', typeField], 'free'],
+    freeColorExpression,
     defaultGray
-  ];
+  ] as maplibregl.ExpressionSpecification;
+}
+
+/** Build filter: show feature only when it is "currently no parking" (for no-parking icon layers). */
+function getNoParkingIconFilter(
+  geometryType: 'Polygon' | 'LineString' | 'Point',
+  typeField: string,
+  openingField: string | undefined,
+  closingField: string | undefined,
+  currentDay: number,
+  currentTime: number
+): maplibregl.FilterSpecification {
+  const dayLiteral = ['literal', currentDay] as [string, number];
+  const timeLiteral = ['literal', currentTime] as [string, number];
+
+  const freeIsNoParking: maplibregl.ExpressionSpecification =
+    (!openingField || !closingField
+      ? ['literal', false]
+      : [
+          'all',
+          ['any', ['!=', ['coalesce', ['get', openingField], 0], 0], ['!=', ['coalesce', ['get', closingField], 24], 24]],
+          [
+            'case',
+            ['>=', ['coalesce', ['get', closingField], 24], ['coalesce', ['get', openingField], 0]],
+            ['any', ['<', timeLiteral, ['coalesce', ['get', openingField], 0]], ['>=', timeLiteral, ['coalesce', ['get', closingField], 24]]],
+            ['all', ['>=', timeLiteral, ['coalesce', ['get', closingField], 24]], ['<', timeLiteral, ['coalesce', ['get', openingField], 0]]]
+          ]
+        ]) as unknown as maplibregl.ExpressionSpecification;
+
+  const isNoParkingNow = [
+    'case',
+    ['==', ['get', typeField], 'no'],
+    true,
+    ['==', ['get', typeField], 'odd'],
+    ['==', ['%', dayLiteral, 2], 0],
+    ['==', ['get', typeField], 'even'],
+    ['==', ['%', dayLiteral, 2], 1],
+    ['==', ['get', typeField], 'free'],
+    freeIsNoParking,
+    false
+  ] as maplibregl.ExpressionSpecification;
+
+  return ['all', ['==', ['geometry-type'], geometryType], isNoParkingNow] as maplibregl.FilterSpecification;
+}
+
+/** Filter that excludes free parking so only no-parking and paid (onStreet/offStreet) are shown. */
+function excludeFreeParkingFilter(
+  geometryType: 'Polygon' | 'LineString' | 'Point',
+  typeField: string | undefined
+): maplibregl.FilterSpecification {
+  const geometryFilter = ['==', ['geometry-type'], geometryType];
+  if (!typeField) return geometryFilter as maplibregl.FilterSpecification;
+  return ['all', geometryFilter, ['!=', ['get', typeField], 'free']] as unknown as maplibregl.FilterSpecification;
+}
+
+/** Append exclude-free to an existing filter (for icon layers). */
+function andExcludeFree(filter: maplibregl.FilterSpecification, typeField: string): maplibregl.FilterSpecification {
+  return ['all', filter, ['!=', ['get', typeField], 'free']] as unknown as maplibregl.FilterSpecification;
 }
 
 interface MapViewProps {
@@ -109,6 +217,23 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const parkingTypeIconsLoadedRef = useRef(false);
+
+  type PaintPropertyName = 'fill-color' | 'line-color' | 'circle-color';
+  const noParkingDynamicPaintLayersRef = useRef<Array<{
+    layerId: string;
+    paintProperty: PaintPropertyName;
+    typeField: string;
+    openingField?: string;
+    closingField?: string;
+  }>>([]);
+  const noParkingDynamicFilterLayersRef = useRef<Array<{
+    layerId: string;
+    geometryType: 'Polygon' | 'LineString' | 'Point';
+    typeField: string;
+    openingField?: string;
+    closingField?: string;
+  }>>([]);
+  const noParkingUpdateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch tileset metadata to understand the data structure
   useEffect(() => {
@@ -223,6 +348,43 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   // Parking layers are added without beforeId so they render on top of all basemap
   // layers (roads, text, POIs), making them the most prominent visual element.
 
+  // Apply current date/time to all no-parking dynamic layers (paint + filter)
+  const applyNoParkingDynamicUpdate = useCallback((mapInstance: maplibregl.Map) => {
+    const currentDay = new Date().getDate();
+    const currentTime = getCurrentTimeHours();
+    for (const entry of noParkingDynamicPaintLayersRef.current) {
+      try {
+        if (!mapInstance.getLayer(entry.layerId)) continue;
+        const expr = getNoParkingAwareColorExpression(
+          entry.typeField,
+          entry.openingField,
+          entry.closingField,
+          currentDay,
+          currentTime
+        );
+        mapInstance.setPaintProperty(entry.layerId, entry.paintProperty, expr);
+      } catch {
+        // layer may have been removed
+      }
+    }
+    for (const entry of noParkingDynamicFilterLayersRef.current) {
+      try {
+        if (!mapInstance.getLayer(entry.layerId)) continue;
+        const filter = getNoParkingIconFilter(
+          entry.geometryType,
+          entry.typeField,
+          entry.openingField,
+          entry.closingField,
+          currentDay,
+          currentTime
+        );
+        mapInstance.setFilter(entry.layerId, filter);
+      } catch {
+        // layer may have been removed
+      }
+    }
+  }, []);
+
   // Function to add tileset layers with dynamic styling
   const addTilesetLayers = (
     mapInstance: maplibregl.Map,
@@ -230,6 +392,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     metadata: TilesetMetadata | null,
     beforeId?: string
   ) => {
+    noParkingDynamicPaintLayersRef.current = [];
+    noParkingDynamicFilterLayersRef.current = [];
+    if (noParkingUpdateIntervalRef.current) {
+      clearInterval(noParkingUpdateIntervalRef.current);
+      noParkingUpdateIntervalRef.current = null;
+    }
+
     if (!metadata?.vector_layers || metadata.vector_layers.length === 0) {
       // Fallback: Add a generic layer if no metadata
       addGenericParkingLayer(mapInstance, sourceId, beforeId);
@@ -352,6 +521,15 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               }
               if (map.current) {
                 addTilesetLayers(map.current, sourceId, tilesetMetadata);
+                if (
+                  noParkingDynamicPaintLayersRef.current.length > 0 ||
+                  noParkingDynamicFilterLayersRef.current.length > 0
+                ) {
+                  applyNoParkingDynamicUpdate(map.current);
+                  noParkingUpdateIntervalRef.current = setInterval(() => {
+                    if (map.current) applyNoParkingDynamicUpdate(map.current);
+                  }, 60000);
+                }
               }
             })();
           }
@@ -371,12 +549,16 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
     // Cleanup
     return () => {
+      if (noParkingUpdateIntervalRef.current) {
+        clearInterval(noParkingUpdateIntervalRef.current);
+        noParkingUpdateIntervalRef.current = null;
+      }
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
     };
-  }, [tilesetUrl, tilesetId, mapboxAccessToken, tilesetMetadata]);
+  }, [tilesetUrl, tilesetId, mapboxAccessToken, tilesetMetadata, applyNoParkingDynamicUpdate]);
 
   // Function to add layer with appropriate styling based on fields
   // beforeId parameter ensures layers are added below labels
@@ -390,8 +572,23 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   ) => {
     // Create style expressions based on available fields
     const styleExpressions = createStyleExpressions(fields);
-    
-    // Add polygon fill layer with geometry type filter (below labels)
+    const currentDay = new Date().getDate();
+    const currentTime = getCurrentTimeHours();
+    const typeField = styleExpressions.typeField;
+    const openingField = styleExpressions.openingTimeField;
+    const closingField = styleExpressions.closingTimeField;
+    const useDynamicNoParking = Boolean(typeField);
+    const dynamicColor =
+      useDynamicNoParking
+        ? getNoParkingAwareColorExpression(typeField!, openingField, closingField, currentDay, currentTime)
+        : styleExpressions.fillColor;
+
+    // Only show features that are currently no parking (hide parkable: onStreet, offStreet, odd on odd dates, even on even dates)
+    const polygonNoParkingFilter =
+      useDynamicNoParking
+        ? getNoParkingIconFilter('Polygon', typeField!, openingField, closingField, currentDay, currentTime)
+        : (['all', ['==', ['geometry-type'], 'Polygon'], ['literal', false]] as maplibregl.FilterSpecification);
+
     const fillLayerId = `${sourceLayer}-fill`;
     try {
       mapInstance.addLayer({
@@ -399,33 +596,66 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         type: 'fill',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'Polygon'],
+        filter: polygonNoParkingFilter,
         paint: {
-          'fill-color': styleExpressions.fillColor,
-          'fill-opacity': styleExpressions.fillOpacity,
+          'fill-color': dynamicColor,
+          'fill-opacity': styleExpressions.fillOpacity
         }
       }, beforeId); // Insert below labels
 
-      // Add outline for polygons (below labels)
+      if (useDynamicNoParking) {
+        noParkingDynamicPaintLayersRef.current.push({
+          layerId: fillLayerId,
+          paintProperty: 'fill-color',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+        noParkingDynamicFilterLayersRef.current.push({
+          layerId: fillLayerId,
+          geometryType: 'Polygon',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+      }
+
       const outlineLayerId = `${sourceLayer}-outline`;
       mapInstance.addLayer({
         id: outlineLayerId,
         type: 'line',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'Polygon'],
+        filter: polygonNoParkingFilter,
         paint: {
-          'line-color': styleExpressions.outlineColor,
+          'line-color': useDynamicNoParking ? dynamicColor : styleExpressions.outlineColor,
           'line-width': 1.5,
           'line-opacity': 0.8
         }
       }, beforeId); // Insert below labels
 
+      if (useDynamicNoParking) {
+        noParkingDynamicPaintLayersRef.current.push({
+          layerId: outlineLayerId,
+          paintProperty: 'line-color',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+        noParkingDynamicFilterLayersRef.current.push({
+          layerId: outlineLayerId,
+          geometryType: 'Polygon',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+      }
+
       // Add click handler
       addClickHandler(mapInstance, fillLayerId);
       addHoverHandler(mapInstance, fillLayerId);
 
-      // Label layer for polygons (parking type at centroid)
+      // Label layer for polygons – only when currently no parking
       if (styleExpressions.typeField) {
         const labelLayerId = `${sourceLayer}-fill-label`;
         try {
@@ -434,7 +664,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: ['==', ['geometry-type'], 'Polygon'],
+            filter: polygonNoParkingFilter,
             layout: {
               'text-field': ['get', styleExpressions.typeField],
               'text-size': 14,
@@ -448,10 +678,19 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               'text-halo-width': 1.5
             }
           }, beforeId);
+          if (useDynamicNoParking) {
+            noParkingDynamicFilterLayersRef.current.push({
+              layerId: labelLayerId,
+              geometryType: 'Polygon',
+              typeField: typeField!,
+              openingField,
+              closingField
+            });
+          }
         } catch {
           console.log(`Could not add polygon label layer: ${labelLayerId}`);
         }
-        // Parking type icons for polygons (no, free, even, odd → no-parking; onStreet, offStreet)
+        // Parking type icons for polygons – only when currently no parking
         if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
           try {
             const typeIconLayerId = `${sourceLayer}-fill-type-icon`;
@@ -460,11 +699,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               type: 'symbol',
               source: sourceId,
               'source-layer': sourceLayer,
-              filter: [
-                'all',
-                ['==', ['geometry-type'], 'Polygon'],
-                ['in', ['get', styleExpressions.typeField], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
-              ],
+              filter: polygonNoParkingFilter,
               layout: {
                 'icon-image': getParkingTypeIconImageExpression(styleExpressions.typeField) as maplibregl.ExpressionSpecification,
                 'icon-size': 1.0,
@@ -475,18 +710,31 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             }, beforeId);
             addClickHandler(mapInstance, typeIconLayerId);
             addHoverHandler(mapInstance, typeIconLayerId);
+            if (useDynamicNoParking) {
+              noParkingDynamicFilterLayersRef.current.push({
+                layerId: typeIconLayerId,
+                geometryType: 'Polygon',
+                typeField: typeField!,
+                openingField,
+                closingField
+              });
+            }
           } catch {
             // ignore
           }
         }
       }
-      
+
       console.log(`✓ Added polygon (fill) layer: ${fillLayerId} (below labels)`);
     } catch (err) {
       console.log(`No polygon geometries in ${sourceLayer}`);
     }
 
-    // Add line layer for linestrings with geometry type filter (below labels)
+    const lineNoParkingFilter =
+      useDynamicNoParking
+        ? getNoParkingIconFilter('LineString', typeField!, openingField, closingField, currentDay, currentTime)
+        : (['all', ['==', ['geometry-type'], 'LineString'], ['literal', false]] as maplibregl.FilterSpecification);
+
     const lineLayerId = `${sourceLayer}-line`;
     try {
       mapInstance.addLayer({
@@ -494,18 +742,34 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         type: 'line',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'LineString'],
+        filter: lineNoParkingFilter,
         paint: {
-          'line-color': styleExpressions.lineColor,
+          'line-color': useDynamicNoParking ? dynamicColor : styleExpressions.lineColor,
           'line-width': styleExpressions.lineWidth,
           'line-opacity': 0.9
         }
       }, beforeId); // Insert below labels
 
+      if (useDynamicNoParking) {
+        noParkingDynamicPaintLayersRef.current.push({
+          layerId: lineLayerId,
+          paintProperty: 'line-color',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+        noParkingDynamicFilterLayersRef.current.push({
+          layerId: lineLayerId,
+          geometryType: 'LineString',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+      }
+
       addClickHandler(mapInstance, lineLayerId);
       addHoverHandler(mapInstance, lineLayerId);
 
-      // Label layer for polylines (horizontal label at line centroid)
       if (styleExpressions.typeField) {
         const lineLabelLayerId = `${sourceLayer}-line-label`;
         try {
@@ -514,7 +778,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: ['==', ['geometry-type'], 'LineString'],
+            filter: lineNoParkingFilter,
             layout: {
               'text-field': ['get', styleExpressions.typeField],
               'text-size': 12,
@@ -528,10 +792,18 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               'text-halo-width': 1.5
             }
           }, beforeId);
+          if (useDynamicNoParking) {
+            noParkingDynamicFilterLayersRef.current.push({
+              layerId: lineLabelLayerId,
+              geometryType: 'LineString',
+              typeField: typeField!,
+              openingField,
+              closingField
+            });
+          }
         } catch {
           console.log(`Could not add polyline label layer: ${lineLabelLayerId}`);
         }
-        // Parking type icons for lines (no, free, even, odd → no-parking; onStreet, offStreet)
         if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
           try {
             const typeIconLayerId = `${sourceLayer}-line-type-icon`;
@@ -540,11 +812,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
               type: 'symbol',
               source: sourceId,
               'source-layer': sourceLayer,
-              filter: [
-                'all',
-                ['==', ['geometry-type'], 'LineString'],
-                ['in', ['get', styleExpressions.typeField], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
-              ],
+              filter: lineNoParkingFilter,
               layout: {
                 'icon-image': getParkingTypeIconImageExpression(styleExpressions.typeField) as maplibregl.ExpressionSpecification,
                 'icon-size': 0.95,
@@ -555,6 +823,15 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             }, beforeId);
             addClickHandler(mapInstance, typeIconLayerId);
             addHoverHandler(mapInstance, typeIconLayerId);
+            if (useDynamicNoParking) {
+              noParkingDynamicFilterLayersRef.current.push({
+                layerId: typeIconLayerId,
+                geometryType: 'LineString',
+                typeField: typeField!,
+                openingField,
+                closingField
+              });
+            }
           } catch {
             // ignore
           }
@@ -566,7 +843,11 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       console.log(`No linestring geometries in ${sourceLayer}`);
     }
 
-    // Add circle layer for points with geometry type filter (below labels)
+    const pointNoParkingFilter =
+      useDynamicNoParking
+        ? getNoParkingIconFilter('Point', typeField!, openingField, closingField, currentDay, currentTime)
+        : (['all', ['==', ['geometry-type'], 'Point'], ['literal', false]] as maplibregl.FilterSpecification);
+
     const circleLayerId = `${sourceLayer}-circle`;
     try {
       mapInstance.addLayer({
@@ -574,9 +855,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         type: 'circle',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'Point'],
+        filter: pointNoParkingFilter,
         paint: {
-          'circle-color': styleExpressions.circleColor,
+          'circle-color': useDynamicNoParking ? dynamicColor : styleExpressions.circleColor,
           'circle-radius': styleExpressions.circleRadius,
           'circle-opacity': 0.8,
           'circle-stroke-color': '#ffffff',
@@ -584,10 +865,26 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         }
       }, beforeId); // Insert below labels
 
+      if (useDynamicNoParking) {
+        noParkingDynamicPaintLayersRef.current.push({
+          layerId: circleLayerId,
+          paintProperty: 'circle-color',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+        noParkingDynamicFilterLayersRef.current.push({
+          layerId: circleLayerId,
+          geometryType: 'Point',
+          typeField: typeField!,
+          openingField,
+          closingField
+        });
+      }
+
       addClickHandler(mapInstance, circleLayerId);
       addHoverHandler(mapInstance, circleLayerId);
 
-      // Parking type icons for points (no, free, even, odd → no-parking; onStreet, offStreet)
       if (parkingTypeIconsLoadedRef.current && styleExpressions.typeField) {
         try {
           const typeIconLayerId = `${sourceLayer}-circle-type-icon`;
@@ -596,11 +893,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: [
-              'all',
-              ['==', ['geometry-type'], 'Point'],
-              ['in', ['get', styleExpressions.typeField], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
-            ],
+            filter: pointNoParkingFilter,
             layout: {
               'icon-image': getParkingTypeIconImageExpression(styleExpressions.typeField) as maplibregl.ExpressionSpecification,
               'icon-size': 1.1,
@@ -610,11 +903,20 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           }, beforeId);
           addClickHandler(mapInstance, typeIconLayerId);
           addHoverHandler(mapInstance, typeIconLayerId);
+          if (useDynamicNoParking) {
+            noParkingDynamicFilterLayersRef.current.push({
+              layerId: typeIconLayerId,
+              geometryType: 'Point',
+              typeField: typeField!,
+              openingField,
+              closingField
+            });
+          }
         } catch {
           // ignore
         }
       }
-      
+
       console.log(`✓ Added point (circle) layer: ${circleLayerId} (below labels)`);
     } catch (err) {
       console.log(`No point geometries in ${sourceLayer}`);
@@ -625,23 +927,38 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const createStyleExpressions = (fields: Record<string, any>) => {
     // Look for common field names to determine styling
     const fieldNames = Object.keys(fields);
-    
+
     // Check for parking_type or type fields
-    const typeField = fieldNames.find(f => 
-      f.toLowerCase().includes('type') || 
-      f.toLowerCase().includes('category') ||
-      f.toLowerCase() === 'parking_type'
+    const typeField = fieldNames.find(
+      (f) =>
+        f.toLowerCase().includes('type') ||
+        f.toLowerCase().includes('category') ||
+        f.toLowerCase() === 'parking_type'
     );
 
     // Check for status fields
-    const statusField = fieldNames.find(f => 
-      f.toLowerCase().includes('status') || 
-      f.toLowerCase().includes('availability')
+    const statusField = fieldNames.find(
+      (f) =>
+        f.toLowerCase().includes('status') || f.toLowerCase().includes('availability')
     );
 
-    const blue = '#3b82f6';           // onStreet, offStreet
-    const lightGray = '#9ca3af';      // no, free, even, odd (no parking)
-    const lightGreen = '#166534';      // status: available
+    // Opening/closing time fields for free-parking rules (numeric 0-24)
+    const openingTimeField = fieldNames.find(
+      (f) =>
+        f.toLowerCase() === 'opening_time' ||
+        f.toLowerCase() === 'open_time' ||
+        f.toLowerCase() === 'opening'
+    );
+    const closingTimeField = fieldNames.find(
+      (f) =>
+        f.toLowerCase() === 'closing_time' ||
+        f.toLowerCase() === 'close_time' ||
+        f.toLowerCase() === 'closing'
+    );
+
+    const blue = '#3b82f6';
+    const lightGray = '#9ca3af';
+    const lightGreen = '#166534';
     const defaultGray = '#6b7280';
 
     let colorExpression: any = defaultGray;
@@ -650,21 +967,30 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       colorExpression = [
         'match',
         ['get', typeField],
-        'onStreet', blue,
-        'offStreet', blue,
-        'free', lightGray,
-        'even', lightGray,
-        'odd', lightGray,
-        'no', lightGray,
+        'onStreet',
+        blue,
+        'offStreet',
+        blue,
+        'free',
+        lightGray,
+        'even',
+        lightGray,
+        'odd',
+        lightGray,
+        'no',
+        lightGray,
         defaultGray
       ];
     } else if (statusField) {
       colorExpression = [
         'match',
         ['get', statusField],
-        'available', lightGreen,
-        'occupied', '#ef4444',
-        'reserved', '#f59e0b',
+        'available',
+        lightGreen,
+        'occupied',
+        '#ef4444',
+        'reserved',
+        '#f59e0b',
         defaultGray
       ];
     }
@@ -680,38 +1006,85 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         'interpolate',
         ['linear'],
         ['zoom'],
-        10, 3,
-        15, 6,
-        20, 12
+        10,
+        3,
+        15,
+        6,
+        20,
+        12
       ] as any,
-      typeField: typeField ?? statusField ?? undefined
+      typeField: typeField ?? statusField ?? undefined,
+      openingTimeField: openingTimeField ?? undefined,
+      closingTimeField: closingTimeField ?? undefined
     };
   };
 
-  // Add click handler for popup
+  const MAX_VALUE_LENGTH = 300;
+
+  // Format a single property value for display (handles objects, arrays, null)
+  const formatPropertyValue = (value: unknown): string => {
+    if (value === null || value === undefined) return '—';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '—';
+      const part = value.map((item) => (typeof item === 'object' && item !== null ? JSON.stringify(item) : String(item))).join(', ');
+      return part.length > MAX_VALUE_LENGTH ? part.slice(0, MAX_VALUE_LENGTH) + '…' : part;
+    }
+    if (typeof value === 'object') {
+      const raw = JSON.stringify(value);
+      return raw.length > MAX_VALUE_LENGTH ? raw.slice(0, MAX_VALUE_LENGTH) + '…' : raw;
+    }
+    return String(value);
+  };
+
+  // Build feature profile HTML for popup (inline styles so it works inside MapLibre popup)
+  const buildFeatureProfileHtml = (properties: Record<string, unknown>, lngLat: { lng: number; lat: number }) => {
+    const entries = Object.entries(properties)
+      .filter(([key]) => !key.startsWith('_'))
+      .sort(([a], [b]) => {
+        const keyOrder = ['parking_type', 'name', 'address', 'opening_time', 'closing_time', 'description', 'instructions', 'slots', 'rating', 'id'];
+        const i = keyOrder.indexOf(a);
+        const j = keyOrder.indexOf(b);
+        if (i !== -1 && j !== -1) return i - j;
+        if (i !== -1) return -1;
+        if (j !== -1) return 1;
+        return a.localeCompare(b);
+      });
+    const rows = entries
+      .map(([key, value]) => {
+        const label = key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+        const text = formatPropertyValue(value);
+        const isMain = ['parking_type', 'name', 'address'].includes(key);
+        return `<div style="margin-bottom: 8px; ${isMain ? 'font-weight: 600;' : ''}"><span style="color: #374151;">${escapeHtml(label)}:</span> <span style="color: #111;">${escapeHtml(text)}</span></div>`;
+      })
+      .join('');
+    return `
+      <div style="font-family: system-ui, sans-serif; padding: 12px 16px; min-width: 240px; max-width: 320px; max-height: 70vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 12px 0; font-size: 1rem; font-weight: 700; color: #111;">Feature profile</h3>
+        <div style="font-size: 13px; line-height: 1.4;">
+          ${rows || '<p style="color: #6b7280;">No properties</p>'}
+        </div>
+      </div>`;
+  };
+
+  const escapeHtml = (s: string) =>
+    String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+  // Add click handler for popup – show feature profile
   const addClickHandler = (mapInstance: maplibregl.Map, layerId: string) => {
     mapInstance.on('click', layerId, (e) => {
       if (e.features && e.features.length > 0) {
+        e.preventDefault();
         const feature = e.features[0];
-        const properties = feature.properties || {};
-        
-        // Create HTML for all properties
-        const propsHtml = Object.entries(properties)
-          .filter(([key]) => !key.startsWith('_')) // Filter out internal properties
-          .map(([key, value]) => {
-            const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            return `<p><strong>${formattedKey}:</strong> ${value}</p>`;
-          })
-          .join('');
-        
-        const popup = new maplibregl.Popup({ offset: 25 })
+        const properties = (feature.properties || {}) as Record<string, unknown>;
+        const html = buildFeatureProfileHtml(properties, e.lngLat);
+        new maplibregl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
           .setLngLat(e.lngLat)
-          .setHTML(`
-            <div class="p-2 min-w-[200px]">
-              <h3 class="font-semibold text-lg mb-2">Feature Details</h3>
-              ${propsHtml || '<p class="text-gray-500">No properties available</p>'}
-            </div>
-          `)
+          .setHTML(html)
           .addTo(mapInstance);
       }
     });
@@ -728,52 +1101,110 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     });
   };
 
-  // Fallback function for generic parking layer
-  // beforeId parameter ensures layers are added below labels
+  // Fallback function for generic parking layer (no metadata: use parking_type, no opening/closing)
   const addGenericParkingLayer = (mapInstance: maplibregl.Map, sourceId: string, beforeId?: string) => {
     const sourceLayer = tilesetId?.split('.').pop() || 'default';
-    
+    const typeField = 'parking_type';
+    const openingField: string | undefined = undefined;
+    const closingField: string | undefined = undefined;
+    const currentDay = new Date().getDate();
+    const currentTime = getCurrentTimeHours();
+    const dynamicColor = getNoParkingAwareColorExpression(
+      typeField,
+      openingField,
+      closingField,
+      currentDay,
+      currentTime
+    );
+    const polygonIconFilter = getNoParkingIconFilter(
+      'Polygon',
+      typeField,
+      openingField,
+      closingField,
+      currentDay,
+      currentTime
+    );
+    const lineIconFilter = getNoParkingIconFilter(
+      'LineString',
+      typeField,
+      openingField,
+      closingField,
+      currentDay,
+      currentTime
+    );
+    const pointIconFilter = getNoParkingIconFilter(
+      'Point',
+      typeField,
+      openingField,
+      closingField,
+      currentDay,
+      currentTime
+    );
+
     console.log('Adding generic parking layers for source-layer:', sourceLayer, beforeId ? `(below ${beforeId})` : '');
-    
-    // Add polygon layer (below labels)
+
+    const filterEntry = (layerId: string, geometryType: 'Polygon' | 'LineString' | 'Point') => ({
+      layerId,
+      geometryType,
+      typeField,
+      openingField,
+      closingField
+    });
+
     try {
       mapInstance.addLayer({
         id: 'parking-fill',
         type: 'fill',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'Polygon'],
+        filter: polygonIconFilter,
         paint: {
-          'fill-color': getParkingTypeColorExpression() as maplibregl.ExpressionSpecification,
+          'fill-color': dynamicColor,
           'fill-opacity': 0.6
         }
-      }, beforeId); // Insert below labels
+      }, beforeId);
 
-      // Add polygon outline (below labels)
+      noParkingDynamicPaintLayersRef.current.push({
+        layerId: 'parking-fill',
+        paintProperty: 'fill-color',
+        typeField,
+        openingField,
+        closingField
+      });
+      noParkingDynamicFilterLayersRef.current.push(filterEntry('parking-fill', 'Polygon'));
+
       mapInstance.addLayer({
         id: 'parking-outline',
         type: 'line',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'Polygon'],
+        filter: polygonIconFilter,
         paint: {
-          'line-color': '#1f2937',
+          'line-color': dynamicColor,
           'line-width': 1.5,
           'line-opacity': 0.8
         }
-      }, beforeId); // Insert below labels
+      }, beforeId);
+
+      noParkingDynamicPaintLayersRef.current.push({
+        layerId: 'parking-outline',
+        paintProperty: 'line-color',
+        typeField,
+        openingField,
+        closingField
+      });
+      noParkingDynamicFilterLayersRef.current.push(filterEntry('parking-outline', 'Polygon'));
 
       addClickHandler(mapInstance, 'parking-fill');
       addHoverHandler(mapInstance, 'parking-fill');
 
-      // Polygon label layer (parking type at centroid)
       try {
         mapInstance.addLayer({
           id: 'parking-fill-label',
           type: 'symbol',
           source: sourceId,
           'source-layer': sourceLayer,
-          filter: ['==', ['geometry-type'], 'Polygon'],
+          filter: polygonIconFilter,
           layout: {
             'text-field': ['get', 'parking_type'],
             'text-size': 14,
@@ -787,6 +1218,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             'text-halo-width': 1.5
           }
         }, beforeId);
+        noParkingDynamicFilterLayersRef.current.push(filterEntry('parking-fill-label', 'Polygon'));
       } catch (err) {
         console.error('Error adding generic polygon label layer:', err);
       }
@@ -797,11 +1229,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: [
-              'all',
-              ['==', ['geometry-type'], 'Polygon'],
-              ['in', ['get', 'parking_type'], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
-            ],
+            filter: polygonIconFilter,
             layout: {
               'icon-image': getParkingTypeIconImageExpression('parking_type') as maplibregl.ExpressionSpecification,
               'icon-size': 1.0,
@@ -812,42 +1240,56 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           }, beforeId);
           addClickHandler(mapInstance, 'parking-fill-type-icon');
           addHoverHandler(mapInstance, 'parking-fill-type-icon');
+          noParkingDynamicFilterLayersRef.current.push({
+            layerId: 'parking-fill-type-icon',
+            geometryType: 'Polygon',
+            typeField,
+            openingField,
+            closingField
+          });
         } catch {
           // ignore
         }
       }
-      
+
       console.log('✓ Added generic polygon layer (below labels)');
     } catch (err) {
       console.error('Error adding generic polygon layer:', err);
     }
 
-    // Add line layer for polylines (below labels)
     try {
       mapInstance.addLayer({
         id: 'parking-line',
         type: 'line',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'LineString'],
+        filter: lineIconFilter,
         paint: {
-          'line-color': getParkingTypeColorExpression() as maplibregl.ExpressionSpecification,
+          'line-color': dynamicColor,
           'line-width': 3,
           'line-opacity': 0.9
         }
-      }, beforeId); // Insert below labels
+      }, beforeId);
+
+      noParkingDynamicPaintLayersRef.current.push({
+        layerId: 'parking-line',
+        paintProperty: 'line-color',
+        typeField,
+        openingField,
+        closingField
+      });
+      noParkingDynamicFilterLayersRef.current.push(filterEntry('parking-line', 'LineString'));
 
       addClickHandler(mapInstance, 'parking-line');
       addHoverHandler(mapInstance, 'parking-line');
 
-      // Polyline label layer (horizontal label at line centroid)
       try {
         mapInstance.addLayer({
           id: 'parking-line-label',
           type: 'symbol',
           source: sourceId,
           'source-layer': sourceLayer,
-          filter: ['==', ['geometry-type'], 'LineString'],
+          filter: lineIconFilter,
           layout: {
             'text-field': ['get', 'parking_type'],
             'text-size': 12,
@@ -861,6 +1303,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             'text-halo-width': 1.5
           }
         }, beforeId);
+        noParkingDynamicFilterLayersRef.current.push(filterEntry('parking-line-label', 'LineString'));
       } catch (err) {
         console.error('Error adding generic polyline label layer:', err);
       }
@@ -871,11 +1314,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: [
-              'all',
-              ['==', ['geometry-type'], 'LineString'],
-              ['in', ['get', 'parking_type'], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
-            ],
+            filter: lineIconFilter,
             layout: {
               'icon-image': getParkingTypeIconImageExpression('parking_type') as maplibregl.ExpressionSpecification,
               'icon-size': 0.95,
@@ -886,39 +1325,57 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           }, beforeId);
           addClickHandler(mapInstance, 'parking-line-type-icon');
           addHoverHandler(mapInstance, 'parking-line-type-icon');
+          noParkingDynamicFilterLayersRef.current.push({
+            layerId: 'parking-line-type-icon',
+            geometryType: 'LineString',
+            typeField,
+            openingField,
+            closingField
+          });
         } catch {
           // ignore
         }
       }
-      
+
       console.log('✓ Added generic polyline layer (below labels)');
     } catch (err) {
       console.error('Error adding generic polyline layer:', err);
     }
 
-    // Add circle layer for points (below labels)
     try {
       mapInstance.addLayer({
         id: 'parking-circle',
         type: 'circle',
         source: sourceId,
         'source-layer': sourceLayer,
-        filter: ['==', ['geometry-type'], 'Point'],
+        filter: pointIconFilter,
         paint: {
-          'circle-color': getParkingTypeColorExpression() as maplibregl.ExpressionSpecification,
+          'circle-color': dynamicColor,
           'circle-radius': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            10, 3,
-            15, 6,
-            20, 12
+            10,
+            3,
+            15,
+            6,
+            20,
+            12
           ],
           'circle-opacity': 0.8,
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2
         }
-      }, beforeId); // Insert below labels
+      }, beforeId);
+
+      noParkingDynamicPaintLayersRef.current.push({
+        layerId: 'parking-circle',
+        paintProperty: 'circle-color',
+        typeField,
+        openingField,
+        closingField
+      });
+      noParkingDynamicFilterLayersRef.current.push(filterEntry('parking-circle', 'Point'));
 
       addClickHandler(mapInstance, 'parking-circle');
       addHoverHandler(mapInstance, 'parking-circle');
@@ -929,11 +1386,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
             type: 'symbol',
             source: sourceId,
             'source-layer': sourceLayer,
-            filter: [
-              'all',
-              ['==', ['geometry-type'], 'Point'],
-              ['in', ['get', 'parking_type'], ['literal', ['no', 'free', 'onStreet', 'offStreet', 'even', 'odd']]]
-            ],
+            filter: pointIconFilter,
             layout: {
               'icon-image': getParkingTypeIconImageExpression('parking_type') as maplibregl.ExpressionSpecification,
               'icon-size': 1.1,
@@ -943,6 +1396,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           }, beforeId);
           addClickHandler(mapInstance, 'parking-circle-type-icon');
           addHoverHandler(mapInstance, 'parking-circle-type-icon');
+          noParkingDynamicFilterLayersRef.current.push({
+            layerId: 'parking-circle-type-icon',
+            geometryType: 'Point',
+            typeField,
+            openingField,
+            closingField
+          });
         } catch {
           // ignore
         }

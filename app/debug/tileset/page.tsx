@@ -3,18 +3,50 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
+const DEFAULT_SAMPLE_LON = '72.83';
+const DEFAULT_SAMPLE_LAT = '19';
+const DEFAULT_SAMPLE_RADIUS = '5000';
+const DEFAULT_SAMPLE_LIMIT = '50';
+
 export default function TilesetDebugPage() {
   const [tilesetId, setTilesetId] = useState('');
   const [metadata, setMetadata] = useState<any>(null);
   const [tilesetData, setTilesetData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sampleFeatures, setSampleFeatures] = useState<any>(null);
+  const [sampleLoading, setSampleLoading] = useState(false);
+  const [sampleError, setSampleError] = useState<string | null>(null);
 
   // Load tileset ID from environment
   useEffect(() => {
     const envTilesetId = process.env.NEXT_PUBLIC_TILESET_ID || '';
     setTilesetId(envTilesetId);
   }, []);
+
+  const fetchSampleFeatures = async () => {
+    if (!tilesetId) {
+      setSampleError('Please enter a tileset ID');
+      return;
+    }
+    setSampleLoading(true);
+    setSampleError(null);
+    setSampleFeatures(null);
+    try {
+      const url = `/api/tileset/sample?tilesetId=${encodeURIComponent(tilesetId)}&lon=${DEFAULT_SAMPLE_LON}&lat=${DEFAULT_SAMPLE_LAT}&radius=${DEFAULT_SAMPLE_RADIUS}&limit=${DEFAULT_SAMPLE_LIMIT}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || data.details || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setSampleFeatures(data);
+    } catch (err) {
+      setSampleError(err instanceof Error ? err.message : 'Failed to fetch sample features');
+    } finally {
+      setSampleLoading(false);
+    }
+  };
 
   const fetchMetadata = async () => {
     if (!tilesetId) {
@@ -93,6 +125,13 @@ export default function TilesetDebugPage() {
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? 'Loading...' : 'Fetch Data'}
+            </button>
+            <button
+              onClick={fetchSampleFeatures}
+              disabled={sampleLoading || !tilesetId}
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {sampleLoading ? 'Loading...' : 'Sample features'}
             </button>
           </div>
           {error && (
@@ -302,6 +341,73 @@ export default function TilesetDebugPage() {
                 </pre>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Sample features (Tilequery) – visible whenever sample was fetched */}
+        {(sampleFeatures != null || sampleError != null) && (
+          <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+              Sample features (Tilequery)
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Features near Mumbai center (lon={DEFAULT_SAMPLE_LON}, lat={DEFAULT_SAMPLE_LAT}, radius={DEFAULT_SAMPLE_RADIUS}m) to inspect parking_type, opening_time, closing_time.
+            </p>
+            {sampleError && (
+              <div className="mb-4 p-4 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 rounded-lg">
+                <p className="font-semibold">Error:</p>
+                <p>{sampleError}</p>
+              </div>
+            )}
+            {sampleFeatures?.features && (
+              <div className="space-y-3 mb-4">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {sampleFeatures.features.length} feature(s) returned
+                </p>
+                {sampleFeatures.features.slice(0, 20).map((f: any, i: number) => (
+                  <div
+                    key={i}
+                    className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-sm"
+                  >
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {f.properties?.parking_type != null && (
+                        <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                          parking_type: {String(f.properties.parking_type)}
+                        </span>
+                      )}
+                      {f.properties?.opening_time != null && (
+                        <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 rounded">
+                          opening_time: {String(f.properties.opening_time)}
+                        </span>
+                      )}
+                      {f.properties?.closing_time != null && (
+                        <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 rounded">
+                          closing_time: {String(f.properties.closing_time)}
+                        </span>
+                      )}
+                      {f.properties?.tilequery?.geometry && (
+                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                          {f.properties.tilequery.geometry}
+                        </span>
+                      )}
+                    </div>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-gray-600 dark:text-gray-400">
+                        All properties
+                      </summary>
+                      <pre className="mt-2 p-2 bg-gray-50 dark:bg-gray-900 rounded text-xs overflow-x-auto">
+                        {JSON.stringify(f.properties, null, 2)}
+                      </pre>
+                    </details>
+                  </div>
+                ))}
+                {sampleFeatures.features.length > 20 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    … and {sampleFeatures.features.length - 20} more
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
