@@ -57,10 +57,12 @@ export default function TimeOverrideChip({
 
   const label = useMemo(() => {
     if (!isOverridden) {
-      return `Now \u00b7 ${SHORT_TIME.format(effectiveNow)}`;
+      return SHORT_TIME.format(effectiveNow);
     }
-    return `Custom \u00b7 ${LONG_LABEL.format(effectiveNow)}`;
+    return LONG_LABEL.format(effectiveNow);
   }, [effectiveNow, isOverridden]);
+
+  const eyebrow = isOverridden ? 'Custom' : 'Now';
 
   // Close panel on Escape and on outside-click.
   useEffect(() => {
@@ -108,14 +110,14 @@ export default function TimeOverrideChip({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={`${inputId}-panel`}
-        className={`flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-semibold shadow-2xl backdrop-blur transition ${
+        className={`group flex items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-semibold shadow-2xl ring-1 ring-white/5 backdrop-blur-md transition ${
           isOverridden
             ? 'border-amber-300/60 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
-            : 'border-white/10 bg-black/70 text-white hover:bg-black/80'
+            : 'border-white/10 bg-black/75 text-white hover:bg-black/85'
         }`}
       >
         <svg
-          className="h-4 w-4 shrink-0"
+          className="h-4 w-4 shrink-0 opacity-90"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -125,7 +127,18 @@ export default function TimeOverrideChip({
           <circle cx="12" cy="12" r="9" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
         </svg>
-        <span className="whitespace-nowrap">{label}</span>
+        <span className="flex flex-col items-start leading-none">
+          <span
+            className={`text-[9px] font-semibold uppercase tracking-[0.16em] ${
+              isOverridden ? 'text-amber-200/80' : 'text-white/55'
+            }`}
+          >
+            {eyebrow}
+          </span>
+          <span className="mt-0.5 whitespace-nowrap text-[13px] font-semibold tabular-nums">
+            {label}
+          </span>
+        </span>
       </button>
 
       {open && (

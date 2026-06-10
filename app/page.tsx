@@ -139,6 +139,20 @@ export default function Home() {
                 Quick Actions
               </a>
               <a
+                href="/privacy"
+                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Privacy Policy
+              </a>
+              <a
+                href="/terms"
+                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Terms &amp; Conditions
+              </a>
+              <a
                 href="https://bridgeit.in"
                 target="_blank"
                 rel="noreferrer"
@@ -298,6 +312,21 @@ export default function Home() {
               )}
             </div>
             <div className="mt-8 text-center text-xs text-white/50">
+              <div className="mb-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+                <a
+                  href="/privacy"
+                  className="text-white/60 transition hover:text-white"
+                >
+                  Privacy Policy
+                </a>
+                <span aria-hidden="true">·</span>
+                <a
+                  href="/terms"
+                  className="text-white/60 transition hover:text-white"
+                >
+                  Terms &amp; Conditions
+                </a>
+              </div>
               © 2026 Maps for Parking. Built by{" "}
               <a
                 href="https://bridgeit.in"

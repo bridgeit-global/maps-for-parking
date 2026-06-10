@@ -12,6 +12,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { createRoot, type Root } from 'react-dom/client';
 import ParkingPopup from './ParkingPopup';
 import TimeOverrideChip from './TimeOverrideChip';
+import MapLegend from './MapLegend';
 import {
   PARKING_TYPE_ICONS,
   addParkingClassLayers,
@@ -85,6 +86,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const [mapReady, setMapReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tilesetMetadata, setTilesetMetadata] = useState<TilesetMetadata | null>(null);
+  // True once the metadata fetch has settled (success OR failure) — or when
+  // there's no metadata to fetch (i.e. only a `tilesetUrl` was provided).
+  // The layer-adding effect waits on this so it never adds layers with a
+  // guessed `source-layer` name on first load (the source-layer guess from
+  // `tilesetId.split('.').pop()` rarely matches the actual baked name, which
+  // causes the "tiles only render after a hard reload" bug).
+  const [metadataResolved, setMetadataResolved] = useState(false);
   const [layersAdded, setLayersAdded] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -128,8 +136,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
   // Fetch tileset metadata.
   useEffect(() => {
-    if (!tilesetId) return;
+    if (!tilesetId) {
+      // No metadata fetch needed — unblock the layer-adding effect.
+      setMetadataResolved(true);
+      return;
+    }
     let cancelled = false;
+    setMetadataResolved(false);
     (async () => {
       try {
         const res = await fetch(
@@ -144,6 +157,11 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         setTilesetMetadata(data.metadata);
       } catch (err) {
         console.error('Error fetching tileset metadata:', err);
+      } finally {
+        // Mark resolved regardless of outcome so a metadata failure doesn't
+        // permanently block the layers from being added (we'll fall back to
+        // a guessed source-layer name).
+        if (!cancelled) setMetadataResolved(true);
       }
     })();
     return () => {
@@ -267,6 +285,11 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     const m = map.current;
     if (!m || !mapReady) return;
     if (!tilesetUrl && !tilesetId) return;
+    // Wait for the metadata fetch to settle before adding layers, otherwise
+    // the source-layer name we use is the fallback guess from `tilesetId`
+    // and can mismatch the baked name → tiles fetch but render nothing
+    // (the "blank on first load, fine after reload" symptom).
+    if (!metadataResolved) return;
     if (layersAdded) return;
 
     let cancelled = false;
@@ -362,6 +385,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     };
   }, [
     mapReady,
+    metadataResolved,
     tilesetMetadata,
     tilesetUrl,
     tilesetId,
@@ -486,10 +510,10 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       />
 
       {mapboxAccessToken && (
-        <div className="absolute top-4 left-1/2 z-20 w-full max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-black/70 shadow-2xl backdrop-blur">
-          <div className="relative flex items-center gap-2 px-3 py-2">
+        <div className="pointer-events-auto absolute top-4 left-1/2 z-20 w-[min(28rem,calc(100%-9rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/75 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.7)] ring-1 ring-white/5 backdrop-blur-md">
+          <div className="relative flex items-center gap-2 px-3.5 py-2">
             <svg
-              className="h-5 w-5 shrink-0 text-white/50"
+              className="h-5 w-5 shrink-0 text-white/60"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -517,17 +541,40 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
                   (e.target as HTMLInputElement).blur();
                 }
               }}
-              placeholder="Search for a place..."
+              placeholder="Search for a place in Mumbai..."
               className="min-w-0 flex-1 rounded-lg border-0 bg-transparent py-1.5 text-sm text-white placeholder-white/50 focus:ring-0"
               aria-label="Search for a place"
               aria-autocomplete="list"
             />
-            {isSearching && (
+            {isSearching ? (
               <div
                 className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
                 aria-hidden
               />
-            )}
+            ) : searchQuery.length > 0 ? (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setSearchQuery('');
+                  setSearchResults([]);
+                }}
+                aria-label="Clear search"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  className="h-3 w-3"
+                  aria-hidden
+                >
+                  <path d="M6 6l12 12M18 6l-12 12" />
+                </svg>
+              </button>
+            ) : null}
           </div>
           {searchDropdownOpen && (searchResults.length > 0 || isSearching) && (
             <ul className="max-h-60 overflow-auto border-t border-white/10 py-1" role="listbox">
@@ -558,6 +605,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
           )}
         </div>
       )}
+
+      <MapLegend />
 
       <div ref={mapContainer} className="w-full h-full" />
     </div>

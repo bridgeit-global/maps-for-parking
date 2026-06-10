@@ -2,8 +2,11 @@ import type maplibregl from 'maplibre-gl';
 
 export const PARKING_COLORS = {
   restrictedRed: '#ef4444',
+  restrictedRedDark: '#b91c1c',
   paidBlue: '#3b82f6',
-  paidBlueDark: '#1d4ed8'
+  paidBlueDark: '#1d4ed8',
+  textRed: '#7f1d1d',
+  textBlue: '#1e3a8a'
 } as const;
 
 export const PARKING_TYPE_ICONS = {
@@ -11,6 +14,15 @@ export const PARKING_TYPE_ICONS = {
   onStreet: { url: '/icons/street-parking.png', id: 'on-street-icon' },
   offStreet: { url: '/icons/off-street-parking.png', id: 'off-street-icon' }
 } as const;
+
+// Fonts that exist in the Carto Voyager glyph stack (basemap default).
+const TEXT_FONT_STACK = ['Open Sans Semibold', 'Noto Sans Regular'];
+
+// Minimum zoom at which we render dense per-feature icons + labels.
+// Below this zoom, only the colored line/fill paint shows so the city-level
+// view stays readable.
+const ICON_MIN_ZOOM = 13.5;
+const ICON_MIN_ZOOM_OFFSTREET = 12.5;
 
 export type GeometryKind = 'LineString' | 'Polygon' | 'Point';
 
@@ -209,6 +221,10 @@ export function addParkingClassLayers(args: {
         source: sourceId,
         'source-layer': sourceLayer,
         filter: buildRestrictedLineFilter(effectiveNow),
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round'
+        },
         paint: {
           'line-color': PARKING_COLORS.restrictedRed,
           'line-width': [
@@ -218,11 +234,21 @@ export function addParkingClassLayers(args: {
             10,
             2,
             14,
-            3,
+            3.5,
             18,
-            5
+            6
           ],
-          'line-opacity': 0.9
+          'line-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.75,
+            14,
+            0.9,
+            18,
+            0.95
+          ]
         }
       },
       beforeId
@@ -245,14 +271,64 @@ export function addParkingClassLayers(args: {
           type: 'symbol',
           source: sourceId,
           'source-layer': sourceLayer,
+          minzoom: ICON_MIN_ZOOM,
           filter: buildRestrictedLineFilter(effectiveNow),
           layout: {
             'icon-image': PARKING_TYPE_ICONS.no.id,
-            'icon-size': 0.9,
+            'icon-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              13,
+              0.55,
+              16,
+              0.85,
+              19,
+              1.1
+            ],
             'icon-allow-overlap': false,
             'icon-ignore-placement': false,
             'symbol-placement': 'line-center',
-            'icon-rotation-alignment': 'viewport'
+            'icon-rotation-alignment': 'viewport',
+            'text-field': [
+              'match',
+              ['get', typeField],
+              'no',
+              'No parking',
+              'odd',
+              'No parking · odd',
+              'even',
+              'No parking · even',
+              'free',
+              'Closed now',
+              ''
+            ] as unknown as maplibregl.ExpressionSpecification,
+            'text-font': TEXT_FONT_STACK,
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              10,
+              17,
+              12,
+              20,
+              13
+            ],
+            'text-anchor': 'top',
+            'text-offset': [0, 1.1],
+            'text-padding': 4,
+            'text-allow-overlap': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport',
+            'text-letter-spacing': 0.02
+          },
+          paint: {
+            'text-color': PARKING_COLORS.textRed,
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5,
+            'text-halo-blur': 0.5
           }
         },
         beforeId
@@ -280,6 +356,10 @@ export function addParkingClassLayers(args: {
         source: sourceId,
         'source-layer': sourceLayer,
         filter: buildPaidOnStreetFilter(),
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round'
+        },
         paint: {
           'line-color': PARKING_COLORS.paidBlue,
           'line-width': [
@@ -287,13 +367,23 @@ export function addParkingClassLayers(args: {
             ['linear'],
             ['zoom'],
             10,
-            2,
+            2.5,
             14,
-            3.5,
+            4,
             18,
-            6
+            7
           ],
-          'line-opacity': 0.9
+          'line-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.8,
+            14,
+            0.92,
+            18,
+            0.95
+          ]
         }
       },
       beforeId
@@ -316,12 +406,51 @@ export function addParkingClassLayers(args: {
           type: 'symbol',
           source: sourceId,
           'source-layer': sourceLayer,
+          minzoom: ICON_MIN_ZOOM,
           filter: buildPaidOnStreetFilter(),
           layout: {
             'icon-image': PARKING_TYPE_ICONS.onStreet.id,
-            'icon-size': 0.95,
+            'icon-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              13,
+              0.6,
+              16,
+              0.95,
+              19,
+              1.15
+            ],
             'symbol-placement': 'line-center',
-            'icon-rotation-alignment': 'viewport'
+            'icon-rotation-alignment': 'viewport',
+            'icon-allow-overlap': false,
+            'text-field': 'Pay & park',
+            'text-font': TEXT_FONT_STACK,
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              10,
+              17,
+              12,
+              20,
+              13
+            ],
+            'text-anchor': 'top',
+            'text-offset': [0, 1.1],
+            'text-padding': 4,
+            'text-allow-overlap': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport',
+            'text-letter-spacing': 0.02
+          },
+          paint: {
+            'text-color': PARKING_COLORS.textBlue,
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5,
+            'text-halo-blur': 0.5
           }
         },
         beforeId
@@ -351,7 +480,18 @@ export function addParkingClassLayers(args: {
         filter: buildPaidOffStreetPolyFilter(),
         paint: {
           'fill-color': PARKING_COLORS.paidBlue,
-          'fill-opacity': 0.35
+          'fill-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.25,
+            14,
+            0.35,
+            18,
+            0.45
+          ],
+          'fill-outline-color': PARKING_COLORS.paidBlueDark
         }
       },
       beforeId
@@ -374,10 +514,24 @@ export function addParkingClassLayers(args: {
         source: sourceId,
         'source-layer': sourceLayer,
         filter: buildPaidOffStreetPolyFilter(),
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round'
+        },
         paint: {
           'line-color': PARKING_COLORS.paidBlueDark,
-          'line-width': 1.5,
-          'line-opacity': 0.9
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            1,
+            14,
+            1.75,
+            18,
+            2.5
+          ],
+          'line-opacity': 0.95
         }
       },
       beforeId
@@ -400,14 +554,61 @@ export function addParkingClassLayers(args: {
           type: 'symbol',
           source: sourceId,
           'source-layer': sourceLayer,
-          minzoom: 13,
+          minzoom: ICON_MIN_ZOOM_OFFSTREET,
           filter: buildPaidOffStreetPolyFilter(),
           layout: {
             'icon-image': PARKING_TYPE_ICONS.offStreet.id,
-            'icon-size': 1,
+            'icon-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              12,
+              0.75,
+              16,
+              1,
+              19,
+              1.2
+            ],
             'icon-allow-overlap': true,
             'symbol-placement': 'point',
-            'icon-rotation-alignment': 'viewport'
+            'icon-rotation-alignment': 'viewport',
+            'text-field': [
+              'case',
+              [
+                'all',
+                ['has', 'name'],
+                ['!=', ['get', 'name'], '']
+              ],
+              ['get', 'name'],
+              'Pay & park lot'
+            ] as unknown as maplibregl.ExpressionSpecification,
+            'text-font': TEXT_FONT_STACK,
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              13,
+              10,
+              16,
+              12,
+              19,
+              13
+            ],
+            'text-anchor': 'top',
+            'text-offset': [0, 1.2],
+            'text-max-width': 8,
+            'text-padding': 4,
+            'text-allow-overlap': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport',
+            'text-letter-spacing': 0.02
+          },
+          paint: {
+            'text-color': PARKING_COLORS.textBlue,
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5,
+            'text-halo-blur': 0.5
           }
         },
         beforeId
