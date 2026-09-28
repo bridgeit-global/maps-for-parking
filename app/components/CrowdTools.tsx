@@ -7,6 +7,7 @@ import {
   PARKING_TYPE_OPTIONS,
   formatRelative
 } from '@/app/lib/community';
+import { formatCredit, loadContributorProgress, notifyContributorProgress } from '@/app/lib/contributor';
 import type { ParkingType } from '@/app/lib/parking';
 
 export interface CorrectionRow {
@@ -97,6 +98,7 @@ export function PinForm({
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [credit, setCredit] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -112,6 +114,7 @@ export function PinForm({
         );
         return;
       }
+      const before = await loadContributorProgress();
       if (mode === 'tow') {
         const { error: insertError } = await supabase.from('tow_alerts').insert({
           user_id: userId,
@@ -136,6 +139,13 @@ export function PinForm({
           status: 'pending'
         });
         if (insertError) throw insertError;
+      }
+      const after = await loadContributorProgress();
+      const line = formatCredit(before, after);
+      notifyContributorProgress();
+      if (line) {
+        setCredit(line);
+        return;
       }
       onSaved();
     } catch (err) {
@@ -188,14 +198,25 @@ export function PinForm({
         className="mt-2 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-base outline-none sm:py-2 sm:text-sm"
       />
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+      {credit && <p className="mt-2 text-xs font-semibold text-emerald-300">{credit}</p>}
       <div className="mt-3 flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#0b1118] disabled:opacity-50"
-        >
-          {busy ? 'Saving…' : 'Save'}
-        </button>
+        {credit ? (
+          <button
+            type="button"
+            onClick={onSaved}
+            className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#0b1118]"
+          >
+            Done
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={busy}
+            className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#0b1118] disabled:opacity-50"
+          >
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        )}
         <button type="button" onClick={onCancel} className="min-h-11 px-3 text-sm font-semibold text-white/70">
           Cancel
         </button>

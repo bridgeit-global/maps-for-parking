@@ -36,6 +36,7 @@ import {
   towWeight,
   type MapLayers
 } from '@/app/lib/community';
+import { recordFeedbackView } from '@/app/lib/contributor';
 import { createClient } from '@/app/lib/supabase/client';
 import { supabasePublicEnv } from '@/app/lib/supabase/env';
 import { useAuth } from '@/app/lib/useAuth';
@@ -98,7 +99,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
   const map = useRef<maplibregl.Map | null>(null);
   const searchMarkerRef = useRef<maplibregl.Marker | null>(null);
   const layerSpecsRef = useRef<ParkingLayerSpec[]>([]);
-  const openCrowdCardRef = useRef<(lngLat: maplibregl.LngLat, html: string) => void>(() => {});
+  const openCrowdCardRef = useRef<
+    (
+      lngLat: maplibregl.LngLat,
+      html: string,
+      target?: { targetType: 'tow' | 'suggestion'; targetId: string }
+    ) => void
+  >(() => {});
   const dismissSheetRef = useRef<() => void>(() => {});
   const mapPaddingRef = useRef(false);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -285,11 +292,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
   }, [clearMapPadding]);
   dismissSheetRef.current = dismissSheet;
 
-  openCrowdCardRef.current = (lngLat, html) => {
+  openCrowdCardRef.current = (lngLat, html, target) => {
     setParkingSelection(null);
     setSelectionIndex(0);
     setNoteHtml(html);
     revealPoint(lngLat);
+    if (target) recordFeedbackView(target.targetType, target.targetId);
   };
 
   const openParkingPopup = useCallback(
@@ -328,11 +336,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
           const crowdFeature = crowdHits[0];
           if (crowdFeature) {
             const props = (crowdFeature.properties ?? {}) as Record<string, unknown>;
+            const targetId = props.id == null ? '' : String(props.id);
+            const targetType = crowdFeature.layer.id === TOW_POINT_LAYER_ID ? 'tow' : 'suggestion';
             openCrowdCardRef.current(
               event.lngLat,
-              crowdFeature.layer.id === TOW_POINT_LAYER_ID
-                ? towCardHtml(props)
-                : communityCardHtml(props)
+              targetType === 'tow' ? towCardHtml(props) : communityCardHtml(props),
+              targetId ? { targetType, targetId } : undefined
             );
             return;
           }
@@ -893,7 +902,13 @@ const CROWD_FONT = ['Open Sans Semibold', 'Noto Sans Regular'];
 
 function ensureCrowdLayers(
   map: maplibregl.Map,
-  openCard: { current: (lngLat: maplibregl.LngLat, html: string) => void }
+  openCard: {
+    current: (
+      lngLat: maplibregl.LngLat,
+      html: string,
+      target?: { targetType: 'tow' | 'suggestion'; targetId: string }
+    ) => void
+  }
 ) {
   if (!map.getSource(TOW_SOURCE_ID)) {
     map.addSource(TOW_SOURCE_ID, { type: 'geojson', data: emptyCollection() });
@@ -940,7 +955,9 @@ function ensureCrowdLayers(
     map.on('click', TOW_POINT_LAYER_ID, (event) => {
       const feature = event.features?.[0];
       if (!feature) return;
-      openCard.current(event.lngLat, towCardHtml(feature.properties ?? {}));
+      const props = feature.properties ?? {};
+      const targetId = props.id == null ? '' : String(props.id);
+      openCard.current(event.lngLat, towCardHtml(props), targetId ? { targetType: 'tow', targetId } : undefined);
     });
     map.on('mouseenter', TOW_POINT_LAYER_ID, () => {
       map.getCanvas().style.cursor = 'pointer';
@@ -993,7 +1010,13 @@ function ensureCrowdLayers(
     map.on('click', COMMUNITY_LAYER_ID, (event) => {
       const feature = event.features?.[0];
       if (!feature) return;
-      openCard.current(event.lngLat, communityCardHtml(feature.properties ?? {}));
+      const props = feature.properties ?? {};
+      const targetId = props.id == null ? '' : String(props.id);
+      openCard.current(
+        event.lngLat,
+        communityCardHtml(props),
+        targetId ? { targetType: 'suggestion', targetId } : undefined
+      );
     });
     map.on('mouseenter', COMMUNITY_LAYER_ID, () => {
       map.getCanvas().style.cursor = 'pointer';

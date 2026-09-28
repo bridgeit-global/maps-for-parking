@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { createClient } from '@/app/lib/supabase/client';
 import { loginPath } from '@/app/lib/auth-redirect';
 import { formatRelative, type ValidationKind } from '@/app/lib/community';
+import { formatCredit, loadContributorProgress, notifyContributorProgress } from '@/app/lib/contributor';
 import { useAuth } from '@/app/lib/useAuth';
 
 interface ValidationRow {
@@ -50,6 +51,7 @@ export default function SegmentFeedback({
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [credit, setCredit] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,6 +110,15 @@ export default function SegmentFeedback({
     return !review || review.status === 'open';
   });
 
+  async function rememberCredit() {
+    const before = await loadContributorProgress();
+    return async () => {
+      const after = await loadContributorProgress();
+      setCredit(formatCredit(before, after));
+      notifyContributorProgress();
+    };
+  }
+
   function requireSignIn(reason: string) {
     if (userId) return false;
     window.location.href = loginPath(reason);
@@ -163,7 +174,9 @@ export default function SegmentFeedback({
     setBusy(true);
     setError(null);
     try {
+      const done = await rememberCredit();
       await saveValidation('confirm', null, null);
+      await done();
       setMode(null);
       onCommunityChange();
     } catch (err) {
@@ -185,8 +198,10 @@ export default function SegmentFeedback({
     setBusy(true);
     setError(null);
     try {
+      const done = await rememberCredit();
       const photoPath = userId ? await uploadPhoto(userId) : null;
       await saveValidation(mode, text || null, photoPath);
+      await done();
       setMode(null);
       setComment('');
       setPhoto(null);
@@ -204,6 +219,7 @@ export default function SegmentFeedback({
     setBusy(true);
     setError(null);
     try {
+      const done = await rememberCredit();
       const supabase = createClient();
       const { error: insertError } = await supabase.from('tow_alerts').insert({
         user_id: userId,
@@ -218,6 +234,7 @@ export default function SegmentFeedback({
         }
         throw insertError;
       }
+      await done();
       setMode(null);
       setNote('');
       onCommunityChange();
@@ -264,6 +281,7 @@ export default function SegmentFeedback({
           {mine.kind === 'confirm' ? 'looks right' : mine.kind === 'rule_wrong' ? 'rule wrong' : 'board missing'}
         </p>
       )}
+      {credit && <p className="text-[11px] font-semibold text-emerald-800">{credit}</p>}
 
       <div className="flex flex-wrap gap-1.5">
         <ActionButton active={mine?.kind === 'confirm'} disabled={busy} onClick={confirm}>

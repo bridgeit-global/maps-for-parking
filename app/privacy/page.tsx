@@ -46,6 +46,10 @@ export default function PrivacyPolicyPage() {
             can use the map without an account. If you sign in, we collect your
             email address to send a one-time sign-in link and to attach the
             parking checks, tow reports, and spot suggestions you submit.
+            Contribution points are stored for that account and shown only to
+            you. From time to time we email that address when your contributions
+            together pass a view milestone. You can unsubscribe in the email,
+            which stops further notes and does not delete your checks.
           </li>
           <li>
             <strong className="text-white/90">Reports you submit:</strong> When
@@ -73,6 +77,8 @@ export default function PrivacyPolicyPage() {
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Provide, operate, and improve the Service</li>
           <li>Display parking zones, crowd checks, and tow reports on the map</li>
+          <li>Show you your own contribution points, level, and badges</li>
+          <li>Email you occasionally when other people view parking information you submitted</li>
           <li>Respond to support requests</li>
           <li>Monitor performance, fix errors, and prevent abuse</li>
           <li>Comply with applicable legal obligations</li>
@@ -104,8 +110,10 @@ export default function PrivacyPolicyPage() {
         </h2>
         <p className="mt-2">
           We may use essential cookies to keep you signed in and to remember
-          preferences (such as language settings). We do not use cookies for
-          targeted advertising.
+          preferences (such as language settings). A random id stored in your
+          browser is used so the same person is not counted twice in one day
+          when they view parking information. Viewer email addresses are not
+          shown on the map. We do not use cookies for targeted advertising.
         </p>
       </section>
 

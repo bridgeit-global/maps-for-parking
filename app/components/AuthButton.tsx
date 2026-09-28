@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/app/lib/supabase/client';
 import { useAuth } from '@/app/lib/useAuth';
+import ContributorChip from './ContributorChip';
 
 export default function AuthButton() {
   const { configured, email, ready } = useAuth();
@@ -43,6 +44,7 @@ export default function AuthButton() {
 
   return (
     <div className="flex items-center gap-2">
+      <ContributorChip />
       <span className="hidden max-w-[10rem] truncate text-xs text-white/70 sm:inline" title={email}>
         {label}
       </span>

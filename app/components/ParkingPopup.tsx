@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   classifyParkingType,
   costForDuration,
@@ -11,6 +11,7 @@ import {
   type RuntimeState
 } from '@/app/lib/parking';
 import { featureIdentity } from '@/app/lib/community';
+import { recordFeedbackView } from '@/app/lib/contributor';
 import SegmentFeedback from './SegmentFeedback';
 
 interface ParkingPopupProps {
@@ -421,6 +422,10 @@ export default function ParkingPopup({
   const state = classifyParkingType(props, effectiveNow);
   const badge = badgeLabel(type, state);
   const identity = featureIdentity(feature.properties, lngLat.lng, lngLat.lat);
+
+  useEffect(() => {
+    recordFeedbackView('feature', identity.featureId);
+  }, [identity.featureId]);
 
   const name = asString(props.name);
   const address = asString(props.address);

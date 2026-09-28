@@ -14,6 +14,7 @@
     "@types/maplibre-gl": "^1.13.2",
     "maplibre-gl": "^5.16.0",
     "next": "16.1.1",
+    "nodemailer": "^10.0.12",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-map-gl": "^8.1.0"
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
