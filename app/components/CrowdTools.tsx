@@ -46,27 +46,33 @@ export function ReportDock({
   }
 
   return (
-    <div className="absolute bottom-24 right-4 z-20 flex flex-col items-end gap-2">
+    <div className="absolute inset-x-0 bottom-0 z-20 sm:inset-x-auto sm:bottom-24 sm:right-4 sm:w-max">
       {pinMode && (
-        <p className="max-w-[14rem] rounded-xl bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+        <p className="mx-3 mb-2 max-w-none rounded-xl bg-black/80 px-3 py-2 text-xs text-white shadow-xl sm:mx-0 sm:max-w-[14rem]">
           Tap the map to drop a pin. Tap a parking line if you meant an existing spot.
         </p>
       )}
-      <button type="button" onClick={() => gate('Sign in to suggest a parking spot.', onSuggest)} className={dockClass(pinMode === 'suggest')}>
-        Suggest a spot
-      </button>
-      <button type="button" onClick={() => gate('Sign in to report a tow crew.', onTow)} className={dockClass(pinMode === 'tow')}>
-        Tow crew here now
-      </button>
-      <button type="button" onClick={onCorrections} className={dockClass(correctionsOpen)} aria-expanded={correctionsOpen}>
-        Corrections{correctionCount > 0 ? ` · ${correctionCount}` : ''}
-      </button>
+      <div className="flex gap-2 overflow-x-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 sm:flex-col sm:items-end sm:overflow-visible sm:px-0 sm:pb-0">
+        <button type="button" onClick={() => gate('Sign in to suggest a parking spot.', onSuggest)} className={dockClass(pinMode === 'suggest')}>
+          <span className="sm:hidden">Suggest</span>
+          <span className="hidden sm:inline">Suggest a spot</span>
+        </button>
+        <button type="button" onClick={() => gate('Sign in to report a tow crew.', onTow)} className={dockClass(pinMode === 'tow')}>
+          <span className="sm:hidden">Tow crew</span>
+          <span className="hidden sm:inline">Tow crew here now</span>
+        </button>
+        <button type="button" onClick={onCorrections} className={dockClass(correctionsOpen)} aria-expanded={correctionsOpen}>
+          <span className="sm:hidden">Fixes</span>
+          <span className="hidden sm:inline">Corrections</span>
+          {correctionCount > 0 ? ` · ${correctionCount}` : ''}
+        </button>
+      </div>
     </div>
   );
 }
 
 function dockClass(active: boolean) {
-  return `rounded-full border px-3.5 py-2 text-xs font-semibold shadow-2xl backdrop-blur transition ${
+  return `shrink-0 rounded-full border px-3.5 py-2 text-xs font-semibold shadow-2xl backdrop-blur transition min-h-11 sm:min-h-0 ${
     active
       ? 'border-white bg-white text-[#0b1118]'
       : 'border-white/10 bg-black/70 text-white hover:bg-black/80'
@@ -142,7 +148,7 @@ export function PinForm({
   return (
     <form
       onSubmit={onSubmit}
-      className="absolute bottom-24 left-1/2 z-30 w-[min(22rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/90 p-4 text-white shadow-2xl"
+      className="absolute bottom-[max(5.25rem,calc(env(safe-area-inset-bottom)+4.75rem))] left-3 right-3 z-30 max-h-[min(70dvh,32rem)] overflow-y-auto rounded-2xl border border-white/10 bg-black/90 p-4 text-white shadow-2xl sm:bottom-24 sm:left-1/2 sm:right-auto sm:w-[min(22rem,calc(100%-2rem))] sm:-translate-x-1/2"
     >
       <p className="text-sm font-semibold">
         {mode === 'tow' ? 'Tow crew here now' : 'Suggest a spot'}
@@ -159,12 +165,12 @@ export function PinForm({
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Name, optional"
-            className="mt-3 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm outline-none"
+            className="mt-3 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-base outline-none sm:py-2 sm:text-sm"
           />
           <select
             value={parkingType}
             onChange={(event) => setParkingType(event.target.value as ParkingType)}
-            className="mt-2 w-full rounded-lg border border-white/15 bg-[#121c26] px-3 py-2 text-sm"
+            className="mt-2 w-full rounded-lg border border-white/15 bg-[#121c26] px-3 py-3 text-base sm:py-2 sm:text-sm"
           >
             {PARKING_TYPE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -179,18 +185,18 @@ export function PinForm({
         onChange={(event) => setComment(event.target.value)}
         rows={2}
         placeholder={mode === 'tow' ? 'Optional note' : 'What should drivers know?'}
-        className="mt-2 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm outline-none"
+        className="mt-2 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-base outline-none sm:py-2 sm:text-sm"
       />
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
       <div className="mt-3 flex gap-2">
         <button
           type="submit"
           disabled={busy}
-          className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#0b1118] disabled:opacity-50"
+          className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#0b1118] disabled:opacity-50"
         >
           {busy ? 'Saving…' : 'Save'}
         </button>
-        <button type="button" onClick={onCancel} className="text-xs font-semibold text-white/70">
+        <button type="button" onClick={onCancel} className="min-h-11 px-3 text-sm font-semibold text-white/70">
           Cancel
         </button>
       </div>
@@ -211,14 +217,16 @@ export function CorrectionsDrawer({
 }) {
   if (!open) return null;
   return (
-    <div className="absolute bottom-24 left-4 z-30 w-[min(22rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-black/90 text-white shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-3">
+    <div className="absolute bottom-[max(5.25rem,calc(env(safe-area-inset-bottom)+4.75rem))] left-3 right-3 z-30 max-h-[min(70dvh,28rem)] overflow-hidden rounded-2xl border border-white/10 bg-black/90 text-white shadow-2xl sm:bottom-24 sm:left-4 sm:right-auto sm:w-[min(22rem,calc(100%-2rem))]">
+      <div className="flex items-center justify-between px-4 py-2">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">Corrections</p>
-        <button type="button" onClick={onClose} aria-label="Close corrections" className="text-white/60 hover:text-white">
-          ✕
+        <button type="button" onClick={onClose} aria-label="Close corrections" className="flex h-11 w-11 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" aria-hidden>
+            <path d="M6 6l12 12M18 6l-12 12" />
+          </svg>
         </button>
       </div>
-      <ul className="max-h-72 space-y-2 overflow-auto px-4 pb-4">
+      <ul className="max-h-[min(50dvh,18rem)] space-y-2 overflow-auto px-4 pb-4">
         {rows.length === 0 && <li className="text-xs text-white/60">No open or recent reports yet.</li>}
         {rows.map((row) => (
           <li key={row.id}>

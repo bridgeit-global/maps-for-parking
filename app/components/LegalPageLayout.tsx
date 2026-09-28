@@ -13,13 +13,14 @@ export default function LegalPageLayout({
 }: LegalPageLayoutProps) {
   return (
     <div className="min-h-screen bg-[#0b1118] text-white">
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0b1118]/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0b1118]/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <Link
             href="/"
             className="text-sm text-white/70 transition hover:text-white"
           >
-            ← Back to Maps for Parking
+            <span className="sm:hidden">← Map</span>
+            <span className="hidden sm:inline">← Back to Maps for Parking</span>
           </Link>
           <a
             href="https://bridgeit.in"
@@ -34,7 +35,7 @@ export default function LegalPageLayout({
 
       <main className="px-4 py-10">
         <article className="mx-auto max-w-3xl">
-          <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
           <p className="mt-2 text-sm text-white/50">Last updated: {lastUpdated}</p>
           <div className="prose-legal mt-8 space-y-6 text-sm leading-relaxed text-white/75">
             {children}

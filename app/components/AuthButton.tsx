@@ -21,7 +21,7 @@ export default function AuthButton() {
     return (
       <Link
         href="/login?next=/"
-        className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#0b1118] transition hover:bg-white/90"
+        className="inline-flex h-10 items-center rounded-full bg-white px-3 text-xs font-semibold text-[#0b1118] transition hover:bg-white/90"
       >
         Sign in
       </Link>
@@ -50,7 +50,7 @@ export default function AuthButton() {
         type="button"
         onClick={signOut}
         disabled={busy}
-        className="rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+        className="inline-flex h-10 items-center rounded-full border border-white/15 px-3 text-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
       >
         {busy ? '…' : 'Sign out'}
       </button>

@@ -107,13 +107,13 @@ export default function MapLegend({
   }, [open]);
 
   return (
-    <div className="absolute bottom-8 left-4 z-20">
+    <div className="absolute bottom-[max(4.75rem,calc(env(safe-area-inset-bottom)+4.25rem))] left-3 z-20 sm:bottom-8 sm:left-4">
       {open && (
         <div
           ref={panelRef}
           role="dialog"
           aria-label="Map legend"
-          className="mb-2 max-h-[min(70vh,32rem)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-black/85 text-white shadow-2xl backdrop-blur"
+          className="mb-2 max-h-[min(60dvh,32rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-2xl border border-white/10 bg-black/85 text-white shadow-2xl backdrop-blur"
         >
           <div className="flex items-center justify-between px-4 pb-2 pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
@@ -123,7 +123,7 @@ export default function MapLegend({
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close legend"
-              className="rounded-full p-1 text-white/60 transition hover:bg-white/10 hover:text-white"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -191,7 +191,7 @@ export default function MapLegend({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={open ? 'Close map legend' : 'Open map legend'}
-        className="flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3.5 py-2 text-xs font-semibold text-white shadow-2xl backdrop-blur transition hover:bg-black/80"
+        className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3.5 py-2 text-xs font-semibold text-white shadow-2xl backdrop-blur transition hover:bg-black/80"
       >
         <span className="flex items-center -space-x-1.5" aria-hidden>
           <span className="h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-black/70" />

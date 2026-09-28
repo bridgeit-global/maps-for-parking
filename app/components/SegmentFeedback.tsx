@@ -311,7 +311,7 @@ export default function SegmentFeedback({
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder="Optional note"
-            className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base text-gray-900 sm:text-sm"
           />
           <SubmitRow busy={busy} label="Report tow crew" onCancel={() => setMode(null)} />
         </form>
@@ -343,7 +343,7 @@ export default function SegmentFeedback({
             rows={2}
             required={mode === 'rule_wrong'}
             placeholder={mode === 'rule_wrong' ? 'What looks wrong?' : 'Optional note'}
-            className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-900"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base text-gray-900 sm:text-sm"
           />
           <label className="block text-[11px] text-gray-500">
             Photo, optional
@@ -379,7 +379,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
+      className={`min-h-10 rounded-full px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${
         active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
       }`}
     >
@@ -394,11 +394,11 @@ function SubmitRow({ busy, label, onCancel }: { busy: boolean; label: string; on
       <button
         type="submit"
         disabled={busy}
-        className="rounded-full bg-gray-900 px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+        className="min-h-11 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
       >
         {busy ? 'Saving…' : label}
       </button>
-      <button type="button" onClick={onCancel} className="text-[11px] font-semibold text-gray-500">
+      <button type="button" onClick={onCancel} className="min-h-11 px-3 text-sm font-semibold text-gray-500">
         Cancel
       </button>
     </div>

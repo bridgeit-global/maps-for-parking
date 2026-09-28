@@ -9,8 +9,8 @@ import {
 } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { createRoot, type Root } from 'react-dom/client';
 import ParkingPopup from './ParkingPopup';
+import DetailSheet from './DetailSheet';
 import TimeOverrideChip from './TimeOverrideChip';
 import MapLegend from './MapLegend';
 import {
@@ -78,12 +78,8 @@ interface TilesetMetadata {
   maxzoom?: number;
 }
 
-interface OpenPopup {
-  popup: maplibregl.Popup;
-  root: Root;
-  container: HTMLDivElement;
+interface ParkingSelection {
   features: maplibregl.MapGeoJSONFeature[];
-  index: number;
   lngLat: { lng: number; lat: number };
 }
 
@@ -102,9 +98,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
   const map = useRef<maplibregl.Map | null>(null);
   const searchMarkerRef = useRef<maplibregl.Marker | null>(null);
   const layerSpecsRef = useRef<ParkingLayerSpec[]>([]);
-  const popupRef = useRef<OpenPopup | null>(null);
-  const crowdPopupRef = useRef<maplibregl.Popup | null>(null);
   const openCrowdCardRef = useRef<(lngLat: maplibregl.LngLat, html: string) => void>(() => {});
+  const dismissSheetRef = useRef<() => void>(() => {});
+  const mapPaddingRef = useRef(false);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -135,7 +131,6 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
   const [communityTick, setCommunityTick] = useState(0);
   const { userId } = useAuth();
   const pinModeRef = useRef(pinMode);
-  const communityTickRef = useRef(0);
   const layersRef = useRef(layers);
   useEffect(() => {
     pinModeRef.current = pinMode;
@@ -144,6 +139,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
     layersRef.current = layers;
   }, [layers]);
   const [tick, setTick] = useState(0);
+  const [parkingSelection, setParkingSelection] = useState<ParkingSelection | null>(null);
+  const [selectionIndex, setSelectionIndex] = useState(0);
+  const [noteHtml, setNoteHtml] = useState<string | null>(null);
   const effectiveNow = useMemo(() => {
     // `tick` is intentionally referenced so the memo re-evaluates on each
     // device-time tick when no override is active.
@@ -220,7 +218,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
       center: [MUMBAI_CENTER.lng, MUMBAI_CENTER.lat],
       zoom: MUMBAI_CENTER.zoom,
       bearing: MUMBAI_CENTER.bearing,
-      pitch: MUMBAI_CENTER.pitch
+      pitch: MUMBAI_CENTER.pitch,
+      attributionControl: { compact: true }
     });
     map.current = m;
 
@@ -244,104 +243,68 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
     });
 
     return () => {
-      if (popupRef.current) {
-        popupRef.current.popup.remove();
-        try {
-          popupRef.current.root.unmount();
-        } catch {}
-        popupRef.current = null;
-      }
       m.remove();
       map.current = null;
     };
   }, []);
 
-  const closeOpenPopup = useCallback(() => {
-    if (popupRef.current) {
-      popupRef.current.popup.remove();
-    }
+  const clearMapPadding = useCallback(() => {
+    if (!mapPaddingRef.current) return;
+    mapPaddingRef.current = false;
+    map.current?.easeTo({
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      duration: 250
+    });
   }, []);
 
-  openCrowdCardRef.current = (lngLat, html) => {
-    closeOpenPopup();
-    crowdPopupRef.current?.remove();
+  const revealPoint = useCallback((lngLat: maplibregl.LngLatLike) => {
     const m = map.current;
     if (!m) return;
-    crowdPopupRef.current = new maplibregl.Popup({
-      offset: 16,
-      closeButton: true,
-      closeOnClick: false,
-      maxWidth: '280px'
-    })
-      .setLngLat(lngLat)
-      .setHTML(html)
-      .addTo(m);
-  };
-
-  const paintPopup = useCallback((current: OpenPopup) => {
-    const feature = current.features[current.index];
-    if (!feature) return;
-    current.root.render(
-      <ParkingPopup
-        feature={feature}
-        effectiveNow={effectiveNowRef.current}
-        lngLat={current.lngLat}
-        refreshKey={communityTickRef.current}
-        stackIndex={current.index}
-        stackSize={current.features.length}
-        onNext={() => {
-          const live = popupRef.current;
-          if (!live || live.features.length < 2) return;
-          live.index = (live.index + 1) % live.features.length;
-          paintPopup(live);
-        }}
-        onCommunityChange={() => setCommunityTick((n) => n + 1)}
-      />
-    );
+    const mobile = window.matchMedia('(max-width: 639px)').matches;
+    const padding = mobile
+      ? {
+          top: 72,
+          bottom: Math.round(m.getContainer().clientHeight * 0.62),
+          left: 16,
+          right: 16
+        }
+      : { top: 88, bottom: 72, left: 400, right: 24 };
+    mapPaddingRef.current = true;
+    m.easeTo({
+      center: maplibregl.LngLat.convert(lngLat),
+      padding,
+      duration: 400
+    });
   }, []);
+
+  const dismissSheet = useCallback(() => {
+    setParkingSelection(null);
+    setNoteHtml(null);
+    setSelectionIndex(0);
+    clearMapPadding();
+  }, [clearMapPadding]);
+  dismissSheetRef.current = dismissSheet;
+
+  openCrowdCardRef.current = (lngLat, html) => {
+    setParkingSelection(null);
+    setSelectionIndex(0);
+    setNoteHtml(html);
+    revealPoint(lngLat);
+  };
 
   const openParkingPopup = useCallback(
     (lngLat: maplibregl.LngLatLike, features: maplibregl.MapGeoJSONFeature[]) => {
-      const m = map.current;
-      if (!m || features.length === 0) return;
-
-      closeOpenPopup();
-      crowdPopupRef.current?.remove();
-      crowdPopupRef.current = null;
-
+      if (features.length === 0) return;
       const point = maplibregl.LngLat.convert(lngLat);
-      const container = document.createElement('div');
-      const root = createRoot(container);
-      const popup = new maplibregl.Popup({
-        offset: 24,
-        closeButton: true,
-        closeOnClick: false,
-        maxWidth: '360px'
-      })
-        .setLngLat(point)
-        .setDOMContent(container)
-        .addTo(m);
-
-      const ref: OpenPopup = {
-        popup,
-        root,
-        container,
+      setNoteHtml(null);
+      setSelectionIndex(0);
+      setParkingSelection({
         features,
-        index: 0,
         lngLat: { lng: point.lng, lat: point.lat }
-      };
-      popup.on('close', () => {
-        try {
-          root.unmount();
-        } catch {}
-        if (popupRef.current?.popup === popup) {
-          popupRef.current = null;
-        }
       });
-      popupRef.current = ref;
-      paintPopup(ref);
+      revealPoint(point);
     },
-    [closeOpenPopup, paintPopup]
+    [revealPoint]
   );
 
   // One map click, queried top-to-bottom, so overlapping streets open the
@@ -355,16 +318,36 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
         const crowdIds = [TOW_POINT_LAYER_ID, COMMUNITY_LAYER_ID].filter(
           (id) => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') !== 'none'
         );
+        const slop = window.matchMedia('(pointer: coarse)').matches ? 18 : 4;
+        const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+          [event.point.x - slop, event.point.y - slop],
+          [event.point.x + slop, event.point.y + slop]
+        ];
         if (crowdIds.length > 0) {
-          const crowdHits = m.queryRenderedFeatures(event.point, { layers: crowdIds });
-          if (crowdHits.length > 0) return;
+          const crowdHits = m.queryRenderedFeatures(bbox, { layers: crowdIds });
+          const crowdFeature = crowdHits[0];
+          if (crowdFeature) {
+            const props = (crowdFeature.properties ?? {}) as Record<string, unknown>;
+            openCrowdCardRef.current(
+              event.lngLat,
+              crowdFeature.layer.id === TOW_POINT_LAYER_ID
+                ? towCardHtml(props)
+                : communityCardHtml(props)
+            );
+            return;
+          }
         }
         const live = ids.filter(
           (id) => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') !== 'none'
         );
-        if (live.length === 0) return;
-        const features = uniqueParkingHits(m.queryRenderedFeatures(event.point, { layers: live }));
-        if (features.length === 0) return;
+        const features =
+          live.length === 0
+            ? []
+            : uniqueParkingHits(m.queryRenderedFeatures(bbox, { layers: live }));
+        if (features.length === 0) {
+          dismissSheetRef.current();
+          return;
+        }
         openParkingPopup(event.lngLat, features);
       });
       for (const id of ids) {
@@ -496,9 +479,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
     registerClickHandlers
   ]);
 
-  // Re-apply filters and re-render any open popup when effectiveNow changes.
+  // Re-apply filters when the preview time or layer toggles change.
+  // An open detail sheet reads `effectiveNow` from React, so it updates too.
   useEffect(() => {
-    communityTickRef.current = communityTick;
     const m = map.current;
     if (!m) return;
     if (layerSpecsRef.current.length > 0) {
@@ -506,10 +489,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
       setParkingLayerVisibility(m, layerSpecsRef.current, layers.rules);
     }
     setCrowdVisibility(m, layers);
-    if (popupRef.current) {
-      paintPopup(popupRef.current);
-    }
-  }, [effectiveNow, communityTick, layers, paintPopup]);
+  }, [effectiveNow, communityTick, layers]);
 
   // Geocoder search.
   const fetchGeocode = useCallback(
@@ -692,6 +672,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
     setOverride(next);
   }, []);
 
+  const selectedFeature =
+    parkingSelection?.features[
+      Math.min(selectionIndex, Math.max(parkingSelection.features.length - 1, 0))
+    ] ?? null;
+  const sheetOpen = Boolean(selectedFeature || noteHtml);
+
   return (
     <div className="relative w-full h-full">
       {isLoading && (
@@ -703,11 +689,12 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
         </div>
       )}
       {error && (
-        <div className="absolute top-4 left-4 z-30 rounded-lg bg-red-100 px-4 py-2 text-red-800 dark:bg-red-900 dark:text-red-200">
+        <div className="absolute left-3 right-3 top-20 z-30 rounded-lg bg-red-100 px-4 py-2 text-red-800 sm:left-4 sm:right-auto dark:bg-red-900 dark:text-red-200">
           <p>{error}</p>
         </div>
       )}
 
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-start gap-2 px-3 sm:pr-16">
       <TimeOverrideChip
         effectiveNow={effectiveNow}
         isOverridden={override !== null}
@@ -715,7 +702,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
       />
 
       {mapboxAccessToken && (
-        <div className="pointer-events-auto absolute top-4 left-1/2 z-20 w-[min(28rem,calc(100%-9rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/75 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.7)] ring-1 ring-white/5 backdrop-blur-md">
+        <div className="pointer-events-auto min-w-0 max-w-xl flex-1 rounded-2xl border border-white/10 bg-black/75 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.7)] ring-1 ring-white/5 backdrop-blur-md">
           <div className="relative flex items-center gap-2 px-3.5 py-2">
             <svg
               className="h-5 w-5 shrink-0 text-white/60"
@@ -746,8 +733,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
                   (e.target as HTMLInputElement).blur();
                 }
               }}
-              placeholder="Search for a place in Mumbai..."
-              className="min-w-0 flex-1 rounded-lg border-0 bg-transparent py-1.5 text-sm text-white placeholder-white/50 focus:ring-0"
+              placeholder="Search Mumbai"
+              className="min-w-0 flex-1 rounded-lg border-0 bg-transparent py-2 text-base text-white placeholder-white/50 focus:ring-0 sm:py-1.5 sm:text-sm"
               aria-label="Search for a place"
               aria-autocomplete="list"
             />
@@ -765,7 +752,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
                   setSearchResults([]);
                 }}
                 aria-label="Clear search"
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -791,7 +778,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
                     key={feature.id}
                     role="option"
                     aria-selected={false}
-                    className="cursor-pointer px-4 py-2.5 text-sm text-white/90 hover:bg-white/10"
+                    className="cursor-pointer px-4 py-3 text-sm text-white/90 hover:bg-white/10"
                     onMouseDown={(e) => {
                       e.preventDefault();
                       handleSelectPlace(feature);
@@ -810,14 +797,15 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
           )}
         </div>
       )}
+      </div>
 
       <MapLegend
         layers={layers}
         onToggle={(key) => setLayers((current) => ({ ...current, [key]: !current[key] }))}
       />
 
-      {caption && (
-        <p className="pointer-events-none absolute left-1/2 top-[4.6rem] z-20 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 text-center text-[11px] font-medium text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+      {caption && !searchDropdownOpen && !sheetOpen && (
+        <p className="pointer-events-none absolute left-4 top-[5.25rem] z-10 hidden max-w-md text-[11px] font-medium text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] sm:block">
           {caption}
         </p>
       )}
@@ -867,7 +855,36 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
         }}
       />
 
-      <div ref={mapContainer} className="w-full h-full" />
+      <div ref={mapContainer} className="h-full w-full" />
+
+      {sheetOpen && (
+        <DetailSheet
+          key={
+            parkingSelection
+              ? `${parkingSelection.lngLat.lng.toFixed(5)},${parkingSelection.lngLat.lat.toFixed(5)}`
+              : 'note'
+          }
+          title={selectedFeature ? 'Parking details' : 'Report'}
+          onClose={dismissSheet}
+        >
+          {selectedFeature && parkingSelection ? (
+            <ParkingPopup
+              feature={selectedFeature}
+              effectiveNow={effectiveNow}
+              lngLat={parkingSelection.lngLat}
+              refreshKey={communityTick}
+              stackIndex={Math.min(selectionIndex, parkingSelection.features.length - 1)}
+              stackSize={parkingSelection.features.length}
+              onNext={() =>
+                setSelectionIndex((index) => (index + 1) % parkingSelection.features.length)
+              }
+              onCommunityChange={() => setCommunityTick((n) => n + 1)}
+            />
+          ) : noteHtml ? (
+            <div dangerouslySetInnerHTML={{ __html: noteHtml }} />
+          ) : null}
+        </DetailSheet>
+      )}
     </div>
   );
 }

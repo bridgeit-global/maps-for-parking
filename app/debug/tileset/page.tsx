@@ -88,7 +88,7 @@ export default function TilesetDebugPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
+    <div className="min-h-screen bg-gray-50 p-4 dark:bg-gray-900 sm:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -111,7 +111,7 @@ export default function TilesetDebugPage() {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Tileset ID
           </label>
-          <div className="flex gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <input
               type="text"
               value={tilesetId}
@@ -241,7 +241,7 @@ export default function TilesetDebugPage() {
                   Bounds
                 </h2>
                 <div className="bg-gray-50 dark:bg-gray-900 rounded p-4">
-                  <pre className="text-sm text-gray-800 dark:text-gray-200">
+                  <pre className="overflow-x-auto text-sm text-gray-800 dark:text-gray-200">
                     {JSON.stringify(metadata.bounds, null, 2)}
                   </pre>
                 </div>

@@ -60,10 +60,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#0b1118] text-white">
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-white/10 bg-[#0b1118]/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-50 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-white/10 bg-[#0b1118]/95 px-3 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur sm:px-4">
         <button
-          className="flex size-10 items-center justify-center rounded-full bg-white/5 transition hover:bg-white/10"
-          aria-label="Open menu"
+          className="flex size-11 items-center justify-center rounded-full bg-white/5 transition hover:bg-white/10"
+          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={isMenuOpen}
           onClick={() => setIsMenuOpen((open) => !open)}
         >
           <svg
@@ -84,23 +85,28 @@ export default function Home() {
           rel="noreferrer"
           className="text-center transition hover:text-white/80"
         >
-          <p className="text-xs uppercase tracking-[0.3em] text-white/50">
+          <p className="hidden text-[10px] uppercase tracking-[0.28em] text-white/50 sm:block">
             {copy.tagline}
           </p>
-          <h1 className="text-lg font-semibold tracking-tight">
+          <h1 className="truncate text-base font-semibold tracking-tight sm:text-lg">
             Maps for Parking
           </h1>
         </a>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <AuthButton />
           <button
-            className="text-xs font-semibold text-white/70 transition hover:text-white"
+            className="inline-flex h-10 items-center gap-1 rounded-full border border-white/15 px-2.5 text-xs font-semibold"
             onClick={() =>
               setLanguage((current) => (current === "en" ? "mr" : "en"))
             }
             aria-pressed={language === "mr"}
+            aria-label={language === "en" ? "Switch to Marathi" : "Switch to English"}
           >
-            {language === "en" ? "EN / मराठी" : "मराठी / EN"}
+            <span className={language === "en" ? "text-white" : "text-white/40"}>EN</span>
+            <span className="text-white/30" aria-hidden>
+              /
+            </span>
+            <span className={language === "mr" ? "text-white" : "text-white/40"}>मर</span>
           </button>
         </div>
       </header>
@@ -108,49 +114,49 @@ export default function Home() {
       <main>
         <section id="hero" className="relative overflow-hidden">
           <div
-            className={`absolute left-4 top-20 z-40 w-48 overflow-hidden rounded-2xl border border-white/10 bg-[#121c26] shadow-xl transition ${
+            className={`absolute left-3 top-3 z-[45] w-[min(16rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#121c26] shadow-xl transition sm:left-4 ${
               isMenuOpen ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
-            <div className="flex flex-col gap-1 p-3 text-sm">
+            <div className="flex flex-col gap-1 p-2 text-sm">
               <a
                 href="#hero"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Home
               </a>
               <a
                 href="#rules"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Rules
               </a>
               <a
                 href="#map"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Map Preview
               </a>
               <a
                 href="#actions"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Quick Actions
               </a>
               <a
                 href="/privacy"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Privacy Policy
               </a>
               <a
                 href="/terms"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Terms &amp; Conditions
@@ -159,7 +165,7 @@ export default function Home() {
                 href="https://bridgeit.in"
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg px-3 py-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg px-3 py-3 text-white/80 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setIsMenuOpen(false)}
               >
                 bridgeit.in
@@ -168,7 +174,7 @@ export default function Home() {
           </div>
           <div
             id="map"
-            className="relative h-[calc(100vh-4rem)] min-h-[70vh] w-full"
+            className="relative h-[calc(100dvh-3.375rem-1px-max(0.625rem,env(safe-area-inset-top,0px)))] min-h-[70dvh] w-full"
           >
             <div className="absolute inset-0">
               <MapView

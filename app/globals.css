@@ -40,3 +40,66 @@ body {
 .maplibregl-popup {
   z-index: 20;
 }
+
+@media (max-width: 639px) {
+  .maplibregl-map .maplibregl-ctrl-top-right {
+    top: 4.75rem;
+  }
+
+  .maplibregl-map .maplibregl-ctrl-bottom-left,
+  .maplibregl-map .maplibregl-ctrl-bottom-right {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .maplibregl-map .maplibregl-ctrl-group > button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact {
+    width: 24px;
+    min-height: 24px;
+    margin: 0 8px 8px 0;
+    padding: 0;
+  }
+
+  .maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-inner {
+    display: none;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+.detail-sheet {
+  animation: detail-sheet-in 220ms ease-out;
+}
+
+@keyframes detail-sheet-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 639px) {
+  .detail-sheet {
+    animation-name: detail-sheet-in-mobile;
+  }
+}
+
+@keyframes detail-sheet-in-mobile {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

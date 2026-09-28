@@ -103,14 +103,14 @@ export default function TimeOverrideChip({
   };
 
   return (
-    <div className="absolute top-4 left-4 z-20">
+    <div className="pointer-events-auto relative z-30 shrink-0">
       <button
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={`${inputId}-panel`}
-        className={`group flex items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-semibold shadow-2xl ring-1 ring-white/5 backdrop-blur-md transition ${
+        className={`group flex min-h-11 items-center gap-2.5 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-2xl ring-1 ring-white/5 backdrop-blur-md transition sm:px-3.5 ${
           isOverridden
             ? 'border-amber-300/60 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
             : 'border-white/10 bg-black/75 text-white hover:bg-black/85'
@@ -136,7 +136,8 @@ export default function TimeOverrideChip({
             {eyebrow}
           </span>
           <span className="mt-0.5 whitespace-nowrap text-[13px] font-semibold tabular-nums">
-            {label}
+            <span className="sm:hidden">{SHORT_TIME.format(effectiveNow)}</span>
+            <span className="hidden sm:inline">{label}</span>
           </span>
         </span>
       </button>
@@ -147,7 +148,7 @@ export default function TimeOverrideChip({
           id={`${inputId}-panel`}
           role="dialog"
           aria-label="Set preview time"
-          className="mt-2 w-72 rounded-2xl border border-white/10 bg-black/85 p-4 text-sm text-white shadow-2xl backdrop-blur"
+          className="absolute left-0 mt-2 w-[min(18rem,calc(100vw-1.5rem))] rounded-2xl border border-white/10 bg-black/85 p-4 text-sm text-white shadow-2xl backdrop-blur"
         >
           <label
             htmlFor={inputId}

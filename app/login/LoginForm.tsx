@@ -54,7 +54,7 @@ export default function LoginForm({
         ← Back to the map
       </Link>
       <p className="mt-8 text-xs uppercase tracking-[0.28em] text-white/50">Don&apos;t tow, know.</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Sign in with email</h1>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Sign in with email</h1>
       <p className="mt-3 text-sm leading-relaxed text-white/70">
         The map stays open without an account. Sign in only when you want to check a rule, report a
         tow crew, or suggest a spot.

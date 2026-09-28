@@ -227,7 +227,7 @@ function CollapsibleDetails({ properties }: { properties: Record<string, unknown
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700"
+        className="flex min-h-11 w-full items-center justify-between text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700"
       >
         <span>Details</span>
         <span aria-hidden>{open ? '\u2212' : '+'}</span>
@@ -264,7 +264,7 @@ function HoursStepper({
           aria-label="Decrease hours"
           onClick={dec}
           disabled={hours <= 1}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <span aria-hidden>−</span>
         </button>
@@ -279,7 +279,7 @@ function HoursStepper({
             if (!Number.isFinite(n)) return;
             onChange(Math.max(1, Math.min(24, Math.trunc(n))));
           }}
-          className="w-10 bg-transparent text-center text-sm font-semibold text-gray-900 focus:outline-none"
+          className="w-12 bg-transparent text-center text-base font-semibold text-gray-900 focus:outline-none"
           aria-label="Number of hours"
         />
         <button
@@ -287,7 +287,7 @@ function HoursStepper({
           aria-label="Increase hours"
           onClick={inc}
           disabled={hours >= 24}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <span aria-hidden>+</span>
         </button>
@@ -316,7 +316,7 @@ function VehicleSegmentedControl({
           role="radio"
           aria-checked={value === opt}
           onClick={() => onChange(opt)}
-          className={`rounded-full px-3 py-1 transition ${
+          className={`min-h-10 rounded-full px-4 py-2 text-sm transition ${
             value === opt
               ? 'bg-white text-gray-900 shadow-sm'
               : 'text-gray-500 hover:text-gray-700'
@@ -429,16 +429,16 @@ export default function ParkingPopup({
   const answer = parkingAnswer(props, effectiveNow);
 
   return (
-    <div className="min-w-[260px] max-w-[320px] font-sans">
+    <div className="w-full font-sans">
       {stackSize > 1 && (
-        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-gray-600">
+        <div className="mb-3 flex items-center justify-between gap-3 text-sm text-gray-600">
           <span>
             {stackIndex + 1} of {stackSize} rules here
           </span>
           <button
             type="button"
             onClick={onNext}
-            className="rounded-full bg-gray-900 px-2.5 py-1 font-semibold text-white"
+            className="min-h-11 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white"
           >
             Next
           </button>
