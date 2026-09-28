@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     "Terms and conditions for using the Maps for Parking service in Mumbai.",
 };
 
-const LAST_UPDATED = "June 10, 2026";
+const LAST_UPDATED = "September 29, 2026";
 
 export default function TermsPage() {
   return (
@@ -27,8 +27,16 @@ export default function TermsPage() {
         </h2>
         <p className="mt-2">
           Maps for Parking provides an interactive map and informational content
-          about parking zones, regulations, and related guidance in Mumbai. The
-          Service is intended to help users make informed parking decisions.
+          about parking rules, prices, and related guidance in Mumbai. It is a
+          compliance aid: it shows where the published rules say you can park,
+          and where other drivers have reported a tow crew. It is not a way to
+          avoid enforcement, and it is not an official traffic-police product.
+        </p>
+        <p className="mt-2">
+          You can browse the map without an account. Signing in is required to
+          confirm a rule, report a problem, report a tow crew, or suggest a spot.
+          Community reports are opinions from other users. They do not replace
+          signs, boards, or official notices.
         </p>
       </section>
 
@@ -62,7 +70,10 @@ export default function TermsPage() {
             Attempt to reverse engineer, scrape, or overload the Service or its
             data sources
           </li>
-          <li>Interfere with the security or proper functioning of the Service</li>
+          <li>
+            Submit false reports, including fake tow alerts, intended to mislead
+            other drivers
+          </li>
           <li>
             Misrepresent the Service as an official government or traffic
             authority product

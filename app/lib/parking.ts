@@ -30,6 +30,62 @@ export interface ParkingFeatureProps {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const CLOCK = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+});
+
+function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function clockLabel(now: Date, at: Date): string {
+  const time = CLOCK.format(at);
+  return sameLocalDay(now, at) ? time : `tomorrow at ${time}`;
+}
+
+/**
+ * One-line answer for "can I park here, until when?"
+ * Paid spots add the rupee amount in the popup, where vehicle and hours are chosen.
+ */
+export function parkingAnswer(props: ParkingFeatureProps, now: Date): string {
+  const state = classifyParkingType(props, now);
+  const type = props.parking_type;
+
+  if (state === 'restricted') {
+    if (type === 'no') return 'No parking here.';
+    if (type === 'odd' || type === 'even') return 'No parking today. Clear by midnight.';
+    if (type === 'free') {
+      const transition = nextFreeWindowTransition(props, now);
+      if (transition?.kind === 'opens') {
+        return `Not legal now. Legal after ${clockLabel(now, transition.at)}.`;
+      }
+      return 'Not legal right now.';
+    }
+    return 'No parking here right now.';
+  }
+
+  if (state === 'paid') {
+    return 'Paid parking. Check the rate before you leave the car.';
+  }
+
+  if (type === 'odd') return 'Legal today. No parking on odd dates.';
+  if (type === 'even') return 'Legal today. No parking on even dates.';
+  if (type === 'free') {
+    const transition = nextFreeWindowTransition(props, now);
+    if (transition?.kind === 'closes') {
+      return `Legal now, until ${clockLabel(now, transition.at)}.`;
+    }
+    return 'Legal now.';
+  }
+  return 'No restriction on file for this spot.';
+}
+
 /**
  * Decimal hours `0..24` for a Date's local time.
  */

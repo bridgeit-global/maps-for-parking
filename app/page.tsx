@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import MapView from "./components/MapView";
+import AuthButton from "./components/AuthButton";
 
 export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -9,15 +10,15 @@ export default function Home() {
 
   const copy = {
     en: {
-      tagline: "Park smarter, not harder",
-      headline: "Park without the penalty",
+      tagline: "Don't tow, know.",
+      headline: "Don't tow, know.",
       subhead:
-        "Avoid fines with real-time rules, legal zones, and smart guidance across Mumbai.",
+        "Legal kerb, the price, and where tow crews were just reported.",
       ctaPrimary: "Find Parking Near Me",
       ctaSecondary: "View Today's Rules",
       rulesTitle: "Know the rules",
       rulesSubtitle: "Common regulations to keep you fine-free.",
-      mapTitle: "Interactive parking map",
+      mapTitle: "Don't tow, know.",
       mapCta: "Open map →",
       mapStatus: "Colaba: High Demand",
       mapLive: "Live zone updates",
@@ -33,15 +34,14 @@ export default function Home() {
       ],
     },
     mr: {
-      tagline: "स्मार्ट पार्किंग, कमी त्रास",
-      headline: "दंड टाळा, योग्य ठिकाणी पार्क करा",
-      subhead:
-        "मुंबईभर नियम, कायदेशीर झोन आणि मार्गदर्शन एका ठिकाणी मिळवा.",
+      tagline: "टो नको, नियम जाणा.",
+      headline: "टो नको, नियम जाणा.",
+      subhead: "कायदेशीर कडे, दर, आणि अलीकडील टो नोंदी.",
       ctaPrimary: "जवळची पार्किंग शोधा",
       ctaSecondary: "आजचे नियम पहा",
       rulesTitle: "नियम जाणून घ्या",
       rulesSubtitle: "सामान्य नियम जे दंडापासून वाचवतात.",
-      mapTitle: "इंटरॅक्टिव्ह पार्किंग नकाशा",
+      mapTitle: "टो नको, नियम जाणा.",
       mapCta: "नकाशा उघडा →",
       mapStatus: "कोलाबा: जास्त गर्दी",
       mapLive: "थेट झोन अपडेट",
@@ -85,21 +85,24 @@ export default function Home() {
           className="text-center transition hover:text-white/80"
         >
           <p className="text-xs uppercase tracking-[0.3em] text-white/50">
-            Mumbai
+            {copy.tagline}
           </p>
           <h1 className="text-lg font-semibold tracking-tight">
             Maps for Parking
           </h1>
         </a>
-        <button
-          className="text-xs font-semibold text-white/70 transition hover:text-white"
-          onClick={() =>
-            setLanguage((current) => (current === "en" ? "mr" : "en"))
-          }
-          aria-pressed={language === "mr"}
-        >
-          {language === "en" ? "EN / मराठी" : "मराठी / EN"}
-        </button>
+        <div className="flex items-center gap-2">
+          <AuthButton />
+          <button
+            className="text-xs font-semibold text-white/70 transition hover:text-white"
+            onClick={() =>
+              setLanguage((current) => (current === "en" ? "mr" : "en"))
+            }
+            aria-pressed={language === "mr"}
+          >
+            {language === "en" ? "EN / मराठी" : "मराठी / EN"}
+          </button>
+        </div>
       </header>
 
       <main>
@@ -172,6 +175,7 @@ export default function Home() {
                 tilesetUrl={process.env.NEXT_PUBLIC_TILESET_URL}
                 tilesetId={process.env.NEXT_PUBLIC_TILESET_ID}
                 mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}
+                caption={copy.subhead}
               />
             </div>
           </div>
@@ -184,7 +188,8 @@ export default function Home() {
                 Parking rules & regulations
               </h3>
               <p className="mt-2 text-sm text-white/60">
-                Pointers based on Mumbai Traffic Police guidelines.
+                Check the kerb before you step out. Official rules stay on the
+                map; locals can confirm them or flag a tow crew.
               </p>
             </div>
             <div className="grid gap-4 lg:grid-cols-3">

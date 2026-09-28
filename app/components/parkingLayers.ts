@@ -1,12 +1,16 @@
 import type maplibregl from 'maplibre-gl';
 
 export const PARKING_COLORS = {
-  restrictedRed: '#ef4444',
+  restrictedRed: '#dc2626',
   restrictedRedDark: '#b91c1c',
-  paidBlue: '#3b82f6',
+  timedAmber: '#d97706',
+  closedOrange: '#ea580c',
+  parkableGreen: '#15803d',
+  paidBlue: '#2563eb',
   paidBlueDark: '#1d4ed8',
   textRed: '#7f1d1d',
-  textBlue: '#1e3a8a'
+  textBlue: '#1e3a8a',
+  textGreen: '#14532d'
 } as const;
 
 export const PARKING_TYPE_ICONS = {
@@ -18,11 +22,11 @@ export const PARKING_TYPE_ICONS = {
 // Fonts that exist in the Carto Voyager glyph stack (basemap default).
 const TEXT_FONT_STACK = ['Open Sans Semibold', 'Noto Sans Regular'];
 
-// Minimum zoom at which we render dense per-feature icons + labels.
-// Below this zoom, only the colored line/fill paint shows so the city-level
-// view stays readable.
-const ICON_MIN_ZOOM = 13.5;
-const ICON_MIN_ZOOM_OFFSTREET = 12.5;
+// Icons and names stay off the city view. Lines carry the rule until the
+// street is large enough to read a label.
+const ICON_MIN_ZOOM = 15.5;
+const NO_PARKING_LABEL_MIN_ZOOM = 16.8;
+const ICON_MIN_ZOOM_OFFSTREET = 14.5;
 
 export type GeometryKind = 'LineString' | 'Polygon' | 'Point';
 
@@ -128,6 +132,96 @@ export function restrictedNowFilter(
 }
 
 /**
+ * Kerbside that is legal at `now`: odd streets on even dates, even streets on
+ * odd dates, and free streets inside a real opening window.
+ * All-day free (0–24) stays undrawn so it does not paint the whole city green.
+ */
+export function parkableNowFilter(
+  typeField: string,
+  openingField: string | undefined,
+  closingField: string | undefined,
+  now: Date
+): maplibregl.FilterSpecification {
+  const dayParity = now.getDate() % 2;
+  const tLit = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+  const opensExpr = openingField ? ['coalesce', ['get', openingField], 0] : 0;
+  const closesExpr = closingField ? ['coalesce', ['get', closingField], 24] : 24;
+  const inWindowExpr: maplibregl.ExpressionSpecification =
+    openingField && closingField
+      ? ([
+          'case',
+          ['>=', closesExpr, opensExpr],
+          ['all', ['>=', tLit, opensExpr], ['<', tLit, closesExpr]],
+          ['any', ['>=', tLit, opensExpr], ['<', tLit, closesExpr]]
+        ] as unknown as maplibregl.ExpressionSpecification)
+      : (['literal', true] as unknown as maplibregl.ExpressionSpecification);
+  const hasWindow: maplibregl.ExpressionSpecification =
+    openingField && closingField
+      ? ([
+          'any',
+          ['!=', opensExpr, 0],
+          ['!=', closesExpr, 24]
+        ] as unknown as maplibregl.ExpressionSpecification)
+      : (['literal', false] as unknown as maplibregl.ExpressionSpecification);
+
+  const isParkable: maplibregl.ExpressionSpecification = [
+    'match',
+    ['get', typeField],
+    'odd',
+    dayParity === 0,
+    'even',
+    dayParity === 1,
+    'free',
+    ['all', hasWindow, inWindowExpr],
+    false
+  ] as unknown as maplibregl.ExpressionSpecification;
+
+  return [
+    'all',
+    ['==', ['geometry-type'], 'LineString'],
+    isParkable
+  ] as unknown as maplibregl.FilterSpecification;
+}
+
+function withTypes(
+  filter: maplibregl.FilterSpecification,
+  typeField: string,
+  types: string[]
+): maplibregl.FilterSpecification {
+  const typeMatch =
+    types.length === 1
+      ? ['==', ['get', typeField], types[0]]
+      : ['in', ['get', typeField], ['literal', types]];
+  return ['all', filter, typeMatch] as unknown as maplibregl.FilterSpecification;
+}
+
+const LINE_WIDTH: maplibregl.ExpressionSpecification = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  10,
+  1.15,
+  13,
+  2.1,
+  16,
+  4,
+  18,
+  6
+];
+
+const LINE_OPACITY: maplibregl.ExpressionSpecification = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  10,
+  0.55,
+  13,
+  0.78,
+  16,
+  0.92
+];
+
+/**
  * Build a MapLibre filter that matches a single paid parking type.
  */
 export function paidTypeFilter(
@@ -182,8 +276,10 @@ function resolveFieldNames(fields?: Record<string, unknown>): {
 }
 
 /**
- * Add the seven parking layers (restricted line + icon, paid onStreet line + icon,
- * paid offStreet fill + outline + icon) for a given source-layer.
+ * Add parking layers for one source-layer. Lines are split by rule so a city
+ * view can be read without labels: solid red is always banned, dashed amber is
+ * an odd/even ban today, dashed orange is a free street outside its hours,
+ * green is legal kerb right now, and blue is paid.
  *
  * Returns descriptors for every layer added so the caller can later refresh
  * filters when `effectiveNow` changes.
@@ -201,147 +297,153 @@ export function addParkingClassLayers(args: {
   const { typeField, openingField, closingField } = resolveFieldNames(fields);
   const specs: ParkingLayerSpec[] = [];
 
-  const restrictedLineId = `${sourceLayer}-restricted-line`;
-  const restrictedIconId = `${sourceLayer}-restricted-icon`;
+  const parkableLineId = `${sourceLayer}-parkable-line`;
+  const noLineId = `${sourceLayer}-no-line`;
+  const timedLineId = `${sourceLayer}-timed-line`;
+  const closedLineId = `${sourceLayer}-closed-line`;
+  const noIconId = `${sourceLayer}-no-icon`;
+  const timedIconId = `${sourceLayer}-timed-icon`;
+  const closedIconId = `${sourceLayer}-closed-icon`;
+  const parkableIconId = `${sourceLayer}-parkable-icon`;
   const paidOnStreetLineId = `${sourceLayer}-paid-onstreet-line`;
   const paidOnStreetIconId = `${sourceLayer}-paid-onstreet-icon`;
   const paidOffStreetFillId = `${sourceLayer}-paid-offstreet-fill`;
   const paidOffStreetOutlineId = `${sourceLayer}-paid-offstreet-outline`;
   const paidOffStreetIconId = `${sourceLayer}-paid-offstreet-icon`;
 
-  // --- Restricted (LineString) -------------------------------------------------
-  const buildRestrictedLineFilter = (now: Date) =>
+  const buildRestrictedAt = (now: Date) =>
     restrictedNowFilter('LineString', typeField, openingField, closingField, now);
+  const buildNoFilter = (now: Date) => withTypes(buildRestrictedAt(now), typeField, ['no']);
+  const buildTimedFilter = (now: Date) =>
+    withTypes(buildRestrictedAt(now), typeField, ['odd', 'even']);
+  const buildClosedFilter = (now: Date) => withTypes(buildRestrictedAt(now), typeField, ['free']);
+  const buildParkableFilter = (now: Date) =>
+    parkableNowFilter(typeField, openingField, closingField, now);
 
-  try {
-    map.addLayer(
-      {
-        id: restrictedLineId,
-        type: 'line',
-        source: sourceId,
-        'source-layer': sourceLayer,
-        filter: buildRestrictedLineFilter(effectiveNow),
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round'
-        },
-        paint: {
-          'line-color': PARKING_COLORS.restrictedRed,
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10,
-            2,
-            14,
-            3.5,
-            18,
-            6
-          ],
-          'line-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10,
-            0.75,
-            14,
-            0.9,
-            18,
-            0.95
-          ]
-        }
-      },
-      beforeId
-    );
-    specs.push({
-      id: restrictedLineId,
-      timeDependent: true,
-      geometryType: 'LineString',
-      buildFilter: buildRestrictedLineFilter
-    });
-  } catch (err) {
-    console.warn(`Could not add ${restrictedLineId}:`, err);
-  }
-
-  if (iconsLoaded.no) {
+  const pushLine = (
+    id: string,
+    color: string,
+    buildFilter: (now: Date) => maplibregl.FilterSpecification,
+    dash?: number[]
+  ) => {
     try {
       map.addLayer(
         {
-          id: restrictedIconId,
-          type: 'symbol',
+          id,
+          type: 'line',
           source: sourceId,
           'source-layer': sourceLayer,
-          minzoom: ICON_MIN_ZOOM,
-          filter: buildRestrictedLineFilter(effectiveNow),
+          filter: buildFilter(effectiveNow),
           layout: {
-            'icon-image': PARKING_TYPE_ICONS.no.id,
-            'icon-size': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              13,
-              0.55,
-              16,
-              0.85,
-              19,
-              1.1
-            ],
-            'icon-allow-overlap': false,
-            'icon-ignore-placement': false,
-            'symbol-placement': 'line-center',
-            'icon-rotation-alignment': 'viewport',
-            'text-field': [
-              'match',
-              ['get', typeField],
-              'no',
-              'No parking',
-              'odd',
-              'No parking · odd',
-              'even',
-              'No parking · even',
-              'free',
-              'Closed now',
-              ''
-            ] as unknown as maplibregl.ExpressionSpecification,
-            'text-font': TEXT_FONT_STACK,
-            'text-size': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              14,
-              10,
-              17,
-              12,
-              20,
-              13
-            ],
-            'text-anchor': 'top',
-            'text-offset': [0, 1.1],
-            'text-padding': 4,
-            'text-allow-overlap': false,
-            'text-optional': true,
-            'text-rotation-alignment': 'viewport',
-            'text-pitch-alignment': 'viewport',
-            'text-letter-spacing': 0.02
+            'line-cap': dash ? 'butt' : 'round',
+            'line-join': 'round'
           },
           paint: {
-            'text-color': PARKING_COLORS.textRed,
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 1.5,
-            'text-halo-blur': 0.5
+            'line-color': color,
+            'line-width': LINE_WIDTH,
+            'line-opacity': LINE_OPACITY,
+            ...(dash ? { 'line-dasharray': dash } : {})
           }
         },
         beforeId
       );
       specs.push({
-        id: restrictedIconId,
+        id,
         timeDependent: true,
         geometryType: 'LineString',
-        buildFilter: buildRestrictedLineFilter
+        buildFilter
       });
     } catch (err) {
-      console.warn(`Could not add ${restrictedIconId}:`, err);
+      console.warn(`Could not add ${id}:`, err);
     }
+  };
+
+  // Bottom to top. Types do not share a feature, so order only matters where streets cross.
+  pushLine(parkableLineId, PARKING_COLORS.parkableGreen, buildParkableFilter);
+  pushLine(closedLineId, PARKING_COLORS.closedOrange, buildClosedFilter, [1.4, 1.2]);
+  pushLine(timedLineId, PARKING_COLORS.timedAmber, buildTimedFilter, [1.6, 1.1]);
+  pushLine(noLineId, PARKING_COLORS.restrictedRed, buildNoFilter);
+
+  const pushRuleLabel = (
+    id: string,
+    label: string,
+    color: string,
+    buildFilter: (now: Date) => maplibregl.FilterSpecification,
+    iconId?: string,
+    minzoom = ICON_MIN_ZOOM
+  ) => {
+    try {
+      map.addLayer(
+        {
+          id,
+          type: 'symbol',
+          source: sourceId,
+          'source-layer': sourceLayer,
+          minzoom,
+          filter: buildFilter(effectiveNow),
+          layout: {
+            ...(iconId
+              ? {
+                  'icon-image': iconId,
+                  'icon-size': 0.7,
+                  'icon-allow-overlap': false,
+                  'icon-padding': 2
+                }
+              : {}),
+            'symbol-placement': 'line-center',
+            'icon-rotation-alignment': 'viewport',
+            'text-field': label,
+            'text-font': TEXT_FONT_STACK,
+            'text-size': 11,
+            'text-anchor': 'top',
+            'text-offset': [0, iconId ? 1.1 : 0.4],
+            'text-padding': 6,
+            'text-allow-overlap': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport'
+          },
+          paint: {
+            'text-color': color,
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5,
+            'text-halo-blur': 0.4
+          }
+        },
+        beforeId
+      );
+      specs.push({
+        id,
+        timeDependent: true,
+        geometryType: 'LineString',
+        buildFilter
+      });
+    } catch (err) {
+      console.warn(`Could not add ${id}:`, err);
+    }
+  };
+
+  pushRuleLabel(parkableIconId, 'Legal now', PARKING_COLORS.textGreen, buildParkableFilter);
+  pushRuleLabel(closedIconId, 'Closed now', '#9a3412', buildClosedFilter);
+  pushRuleLabel(timedIconId, 'Blocked today', '#92400e', buildTimedFilter);
+  if (iconsLoaded.no) {
+    pushRuleLabel(
+      noIconId,
+      'No parking',
+      PARKING_COLORS.textRed,
+      buildNoFilter,
+      PARKING_TYPE_ICONS.no.id,
+      NO_PARKING_LABEL_MIN_ZOOM
+    );
+  } else {
+    pushRuleLabel(
+      noIconId,
+      'No parking',
+      PARKING_COLORS.textRed,
+      buildNoFilter,
+      undefined,
+      NO_PARKING_LABEL_MIN_ZOOM
+    );
   }
 
   // --- Paid: onStreet (LineString) --------------------------------------------
@@ -362,26 +464,16 @@ export function addParkingClassLayers(args: {
         },
         paint: {
           'line-color': PARKING_COLORS.paidBlue,
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10,
-            2.5,
-            14,
-            4,
-            18,
-            7
-          ],
+          'line-width': LINE_WIDTH,
           'line-opacity': [
             'interpolate',
             ['linear'],
             ['zoom'],
             10,
-            0.8,
-            14,
-            0.92,
-            18,
+            0.7,
+            13,
+            0.88,
+            16,
             0.95
           ]
         }
@@ -485,9 +577,9 @@ export function addParkingClassLayers(args: {
             ['linear'],
             ['zoom'],
             10,
-            0.25,
+            0.16,
             14,
-            0.35,
+            0.32,
             18,
             0.45
           ],
@@ -562,14 +654,15 @@ export function addParkingClassLayers(args: {
               'interpolate',
               ['linear'],
               ['zoom'],
-              12,
-              0.75,
+              14,
+              0.62,
               16,
-              1,
+              0.9,
               19,
-              1.2
+              1.15
             ],
-            'icon-allow-overlap': true,
+            'icon-allow-overlap': false,
+            'icon-padding': 4,
             'symbol-placement': 'point',
             'icon-rotation-alignment': 'viewport',
             'text-field': [
@@ -608,7 +701,16 @@ export function addParkingClassLayers(args: {
             'text-color': PARKING_COLORS.textBlue,
             'text-halo-color': '#ffffff',
             'text-halo-width': 1.5,
-            'text-halo-blur': 0.5
+            'text-halo-blur': 0.5,
+            'text-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              0,
+              15.3,
+              1
+            ]
           }
         },
         beforeId
@@ -650,6 +752,18 @@ export function applyEffectiveNow(
  * The set of layer IDs that should fire the parking popup on click.
  * Used by MapView to register a single delegated click handler.
  */
+export function setParkingLayerVisibility(
+  map: maplibregl.Map,
+  specs: ParkingLayerSpec[],
+  visible: boolean
+): void {
+  const value = visible ? 'visible' : 'none';
+  for (const spec of specs) {
+    if (!map.getLayer(spec.id)) continue;
+    map.setLayoutProperty(spec.id, 'visibility', value);
+  }
+}
+
 export function clickableLayerIds(specs: ParkingLayerSpec[]): string[] {
   // Every parking layer is clickable so users can interact with both lines
   // and the polygon fills/outlines. Icon layers also act as click targets.

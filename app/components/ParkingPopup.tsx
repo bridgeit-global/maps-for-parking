@@ -4,17 +4,26 @@ import { useMemo, useState } from 'react';
 import {
   classifyParkingType,
   costForDuration,
-  nextFreeWindowTransition,
+  parkingAnswer,
   type ParkingFeatureProps,
   type ParkingType,
-  type ParkingVehicle
+  type ParkingVehicle,
+  type RuntimeState
 } from '@/app/lib/parking';
+import { featureIdentity } from '@/app/lib/community';
+import SegmentFeedback from './SegmentFeedback';
 
 interface ParkingPopupProps {
   feature: {
     properties?: Record<string, unknown> | null;
   };
   effectiveNow: Date;
+  lngLat: { lng: number; lat: number };
+  refreshKey: number;
+  onCommunityChange: () => void;
+  stackIndex?: number;
+  stackSize?: number;
+  onNext?: () => void;
 }
 
 const HOUR_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -138,16 +147,28 @@ function formatEndTime(now: Date, endsAt: Date): string {
     : WEEKDAY_HOUR_FORMAT.format(endsAt);
 }
 
-function badgeLabel(type: ParkingType | undefined): { label: string; tone: 'red' | 'blue' | 'gray' } {
+function badgeLabel(
+  type: ParkingType | undefined,
+  state: RuntimeState
+): { label: string; tone: 'red' | 'blue' | 'gray' | 'green' | 'amber' } {
+  if (type === 'odd') {
+    return state === 'parkable'
+      ? { label: 'Odd dates \u00b7 legal today', tone: 'green' }
+      : { label: 'Odd dates \u00b7 blocked today', tone: 'amber' };
+  }
+  if (type === 'even') {
+    return state === 'parkable'
+      ? { label: 'Even dates \u00b7 legal today', tone: 'green' }
+      : { label: 'Even dates \u00b7 blocked today', tone: 'amber' };
+  }
+  if (type === 'free') {
+    return state === 'parkable'
+      ? { label: 'Free street \u00b7 open now', tone: 'green' }
+      : { label: 'Free street \u00b7 closed now', tone: 'amber' };
+  }
   switch (type) {
     case 'no':
-      return { label: 'No parking zone', tone: 'red' };
-    case 'odd':
-      return { label: 'No parking \u00b7 odd dates', tone: 'red' };
-    case 'even':
-      return { label: 'No parking \u00b7 even dates', tone: 'red' };
-    case 'free':
-      return { label: 'Free zone \u00b7 closed now', tone: 'red' };
+      return { label: 'No parking', tone: 'red' };
     case 'onStreet':
       return { label: 'Pay & park \u00b7 street', tone: 'blue' };
     case 'offStreet':
@@ -157,13 +178,23 @@ function badgeLabel(type: ParkingType | undefined): { label: string; tone: 'red'
   }
 }
 
-function StatusBadge({ tone, children }: { tone: 'red' | 'blue' | 'gray'; children: React.ReactNode }) {
+function StatusBadge({
+  tone,
+  children
+}: {
+  tone: 'red' | 'blue' | 'gray' | 'green' | 'amber';
+  children: React.ReactNode;
+}) {
   const palette =
     tone === 'red'
       ? 'bg-red-100 text-red-700 ring-red-200'
-      : tone === 'blue'
-        ? 'bg-blue-100 text-blue-700 ring-blue-200'
-        : 'bg-gray-100 text-gray-700 ring-gray-200';
+      : tone === 'amber'
+        ? 'bg-amber-100 text-amber-800 ring-amber-200'
+        : tone === 'green'
+          ? 'bg-green-100 text-green-800 ring-green-200'
+          : tone === 'blue'
+            ? 'bg-blue-100 text-blue-700 ring-blue-200'
+            : 'bg-gray-100 text-gray-700 ring-gray-200';
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${palette}`}
@@ -318,7 +349,9 @@ function PaidVariant({
   const endText = formatEndTime(effectiveNow, cost.endsAt);
 
   const isBooking = asBoolean(props.is_booking_available);
-  const cancellation = asString(props.cancellation_policy);
+  const cancellationFlag = asBoolean(props.cancellation_policy);
+  const cancellation =
+    cancellationFlag === undefined ? asString(props.cancellation_policy) : undefined;
 
   return (
     <div className="space-y-3">
@@ -367,52 +400,52 @@ function PaidVariant({
   );
 }
 
-function RestrictedVariant({
-  props,
-  effectiveNow
-}: {
-  props: ParkingFeatureProps;
-  effectiveNow: Date;
-}) {
-  const type = props.parking_type as ParkingType | undefined;
-
-  let primaryFact: string | undefined;
-  if (type === 'no') {
-    primaryFact = firstInstruction(props.parking_instructions) ?? asString(props.address);
-  } else if (type === 'odd' || type === 'even') {
-    primaryFact = 'Restricted today \u00b7 clear by midnight';
-  } else if (type === 'free') {
-    const transition = nextFreeWindowTransition(props, effectiveNow);
-    if (transition) {
-      const target = isSameLocalDay(effectiveNow, transition.at)
-        ? HOUR_FORMAT.format(transition.at)
-        : `tomorrow at ${HOUR_FORMAT.format(transition.at)}`;
-      primaryFact =
-        transition.kind === 'opens' ? `Reopens at ${target}` : `Closes at ${target}`;
-    }
-  }
-
-  return (
-    <div className="space-y-2 text-sm text-gray-700">
-      {primaryFact && <p className="leading-snug">{primaryFact}</p>}
-    </div>
-  );
+function ExtraFact({ props, answer }: { props: ParkingFeatureProps; answer: string }) {
+  const instruction = firstInstruction(props.parking_instructions);
+  if (!instruction || instruction === answer) return null;
+  return <p className="text-sm leading-snug text-gray-700">{instruction}</p>;
 }
 
-export default function ParkingPopup({ feature, effectiveNow }: ParkingPopupProps) {
+export default function ParkingPopup({
+  feature,
+  effectiveNow,
+  lngLat,
+  refreshKey,
+  onCommunityChange,
+  stackIndex = 0,
+  stackSize = 1,
+  onNext
+}: ParkingPopupProps) {
   const props = (feature.properties ?? {}) as ParkingFeatureProps;
   const type = props.parking_type as ParkingType | undefined;
   const state = classifyParkingType(props, effectiveNow);
-  const badge = badgeLabel(type);
+  const badge = badgeLabel(type, state);
+  const identity = featureIdentity(feature.properties, lngLat.lng, lngLat.lat);
 
   const name = asString(props.name);
   const address = asString(props.address);
-  const headerTitle = name ?? address ?? 'Parking feature';
+  const headerTitle = name ?? address ?? 'This kerb';
   const subtitle = name && address ? address : undefined;
+  const answer = parkingAnswer(props, effectiveNow);
 
   return (
     <div className="min-w-[260px] max-w-[320px] font-sans">
-      <div className="mb-2">
+      {stackSize > 1 && (
+        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-gray-600">
+          <span>
+            {stackIndex + 1} of {stackSize} rules here
+          </span>
+          <button
+            type="button"
+            onClick={onNext}
+            className="rounded-full bg-gray-900 px-2.5 py-1 font-semibold text-white"
+          >
+            Next
+          </button>
+        </div>
+      )}
+      <p className="text-sm font-semibold leading-snug text-gray-900">{answer}</p>
+      <div className="mb-2 mt-2">
         <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
       </div>
       <h3 className="text-base font-bold leading-snug text-gray-900">{headerTitle}</h3>
@@ -422,9 +455,19 @@ export default function ParkingPopup({ feature, effectiveNow }: ParkingPopupProp
         {state === 'paid' ? (
           <PaidVariant props={props} effectiveNow={effectiveNow} />
         ) : (
-          <RestrictedVariant props={props} effectiveNow={effectiveNow} />
+          <ExtraFact props={props} answer={answer} />
         )}
       </div>
+
+      <SegmentFeedback
+        featureId={identity.featureId}
+        featureName={identity.featureName}
+        parkingType={identity.parkingType}
+        lng={lngLat.lng}
+        lat={lngLat.lat}
+        refreshKey={refreshKey}
+        onCommunityChange={onCommunityChange}
+      />
 
       <CollapsibleDetails properties={props as Record<string, unknown>} />
     </div>

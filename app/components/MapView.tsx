@@ -18,8 +18,28 @@ import {
   addParkingClassLayers,
   applyEffectiveNow,
   clickableLayerIds,
+  setParkingLayerVisibility,
   type ParkingLayerSpec
 } from './parkingLayers';
+import {
+  COMMUNITY_LABEL_LAYER_ID,
+  COMMUNITY_LAYER_ID,
+  COMMUNITY_SOURCE_ID,
+  TOW_HEAT_LAYER_ID,
+  TOW_LABEL_LAYER_ID,
+  TOW_POINT_LAYER_ID,
+  TOW_SOURCE_ID,
+  emptyCollection,
+  formatRelative,
+  parkingTypeLabel,
+  pointsToGeoJSON,
+  towWeight,
+  type MapLayers
+} from '@/app/lib/community';
+import { createClient } from '@/app/lib/supabase/client';
+import { supabasePublicEnv } from '@/app/lib/supabase/env';
+import { useAuth } from '@/app/lib/useAuth';
+import { CorrectionsDrawer, PinForm, ReportDock, type CorrectionRow } from './CrowdTools';
 
 const MUMBAI_CENTER = {
   lng: 72.83,
@@ -35,6 +55,7 @@ interface MapViewProps {
   tilesetUrl?: string;
   tilesetId?: string;
   mapboxAccessToken?: string;
+  caption?: string;
 }
 
 interface GeocodeFeature {
@@ -61,7 +82,9 @@ interface OpenPopup {
   popup: maplibregl.Popup;
   root: Root;
   container: HTMLDivElement;
-  feature: maplibregl.MapGeoJSONFeature;
+  features: maplibregl.MapGeoJSONFeature[];
+  index: number;
+  lngLat: { lng: number; lat: number };
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -74,12 +97,14 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: MapViewProps) {
+export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, caption }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const searchMarkerRef = useRef<maplibregl.Marker | null>(null);
   const layerSpecsRef = useRef<ParkingLayerSpec[]>([]);
   const popupRef = useRef<OpenPopup | null>(null);
+  const crowdPopupRef = useRef<maplibregl.Popup | null>(null);
+  const openCrowdCardRef = useRef<(lngLat: maplibregl.LngLat, html: string) => void>(() => {});
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -102,6 +127,22 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [override, setOverride] = useState<Date | null>(null);
+  const [layers, setLayers] = useState<MapLayers>({ rules: true, tows: true, community: true });
+  const [pinMode, setPinMode] = useState<'suggest' | 'tow' | null>(null);
+  const [draftPin, setDraftPin] = useState<{ lng: number; lat: number } | null>(null);
+  const [correctionsOpen, setCorrectionsOpen] = useState(false);
+  const [corrections, setCorrections] = useState<CorrectionRow[]>([]);
+  const [communityTick, setCommunityTick] = useState(0);
+  const { userId } = useAuth();
+  const pinModeRef = useRef(pinMode);
+  const communityTickRef = useRef(0);
+  const layersRef = useRef(layers);
+  useEffect(() => {
+    pinModeRef.current = pinMode;
+  }, [pinMode]);
+  useEffect(() => {
+    layersRef.current = layers;
+  }, [layers]);
   const [tick, setTick] = useState(0);
   const effectiveNow = useMemo(() => {
     // `tick` is intentionally referenced so the memo re-evaluates on each
@@ -221,13 +262,54 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
     }
   }, []);
 
+  openCrowdCardRef.current = (lngLat, html) => {
+    closeOpenPopup();
+    crowdPopupRef.current?.remove();
+    const m = map.current;
+    if (!m) return;
+    crowdPopupRef.current = new maplibregl.Popup({
+      offset: 16,
+      closeButton: true,
+      closeOnClick: false,
+      maxWidth: '280px'
+    })
+      .setLngLat(lngLat)
+      .setHTML(html)
+      .addTo(m);
+  };
+
+  const paintPopup = useCallback((current: OpenPopup) => {
+    const feature = current.features[current.index];
+    if (!feature) return;
+    current.root.render(
+      <ParkingPopup
+        feature={feature}
+        effectiveNow={effectiveNowRef.current}
+        lngLat={current.lngLat}
+        refreshKey={communityTickRef.current}
+        stackIndex={current.index}
+        stackSize={current.features.length}
+        onNext={() => {
+          const live = popupRef.current;
+          if (!live || live.features.length < 2) return;
+          live.index = (live.index + 1) % live.features.length;
+          paintPopup(live);
+        }}
+        onCommunityChange={() => setCommunityTick((n) => n + 1)}
+      />
+    );
+  }, []);
+
   const openParkingPopup = useCallback(
-    (lngLat: maplibregl.LngLatLike, feature: maplibregl.MapGeoJSONFeature) => {
+    (lngLat: maplibregl.LngLatLike, features: maplibregl.MapGeoJSONFeature[]) => {
       const m = map.current;
-      if (!m) return;
+      if (!m || features.length === 0) return;
 
       closeOpenPopup();
+      crowdPopupRef.current?.remove();
+      crowdPopupRef.current = null;
 
+      const point = maplibregl.LngLat.convert(lngLat);
       const container = document.createElement('div');
       const root = createRoot(container);
       const popup = new maplibregl.Popup({
@@ -236,11 +318,18 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         closeOnClick: false,
         maxWidth: '360px'
       })
-        .setLngLat(lngLat)
+        .setLngLat(point)
         .setDOMContent(container)
         .addTo(m);
 
-      const ref: OpenPopup = { popup, root, container, feature };
+      const ref: OpenPopup = {
+        popup,
+        root,
+        container,
+        features,
+        index: 0,
+        lngLat: { lng: point.lng, lat: point.lat }
+      };
       popup.on('close', () => {
         try {
           root.unmount();
@@ -250,25 +339,35 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         }
       });
       popupRef.current = ref;
-      root.render(
-        <ParkingPopup feature={feature} effectiveNow={effectiveNowRef.current} />
-      );
+      paintPopup(ref);
     },
-    [closeOpenPopup]
+    [closeOpenPopup, paintPopup]
   );
 
-  // Single delegated click handler over every parking layer.
+  // One map click, queried top-to-bottom, so overlapping streets open the
+  // feature on top and offer the rest as "next".
   const registerClickHandlers = useCallback(
     (specs: ParkingLayerSpec[]) => {
       const m = map.current;
       if (!m) return;
       const ids = clickableLayerIds(specs);
+      m.on('click', (event) => {
+        const crowdIds = [TOW_POINT_LAYER_ID, COMMUNITY_LAYER_ID].filter(
+          (id) => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') !== 'none'
+        );
+        if (crowdIds.length > 0) {
+          const crowdHits = m.queryRenderedFeatures(event.point, { layers: crowdIds });
+          if (crowdHits.length > 0) return;
+        }
+        const live = ids.filter(
+          (id) => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') !== 'none'
+        );
+        if (live.length === 0) return;
+        const features = uniqueParkingHits(m.queryRenderedFeatures(event.point, { layers: live }));
+        if (features.length === 0) return;
+        openParkingPopup(event.lngLat, features);
+      });
       for (const id of ids) {
-        m.on('click', id, (e) => {
-          const features = m.queryRenderedFeatures(e.point, { layers: [id] });
-          if (!features || features.length === 0) return;
-          openParkingPopup(e.lngLat, features[0]);
-        });
         m.on('mouseenter', id, () => {
           m.getCanvas().style.cursor = 'pointer';
         });
@@ -376,7 +475,10 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       }
 
       layerSpecsRef.current = newSpecs;
+      setParkingLayerVisibility(m, newSpecs, layersRef.current.rules);
       registerClickHandlers(newSpecs);
+      ensureCrowdLayers(m, openCrowdCardRef);
+      setCrowdVisibility(m, layersRef.current);
       setLayersAdded(true);
     })();
 
@@ -396,17 +498,18 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
 
   // Re-apply filters and re-render any open popup when effectiveNow changes.
   useEffect(() => {
+    communityTickRef.current = communityTick;
     const m = map.current;
     if (!m) return;
     if (layerSpecsRef.current.length > 0) {
       applyEffectiveNow(m, layerSpecsRef.current, effectiveNow);
+      setParkingLayerVisibility(m, layerSpecsRef.current, layers.rules);
     }
+    setCrowdVisibility(m, layers);
     if (popupRef.current) {
-      popupRef.current.root.render(
-        <ParkingPopup feature={popupRef.current.feature} effectiveNow={effectiveNow} />
-      );
+      paintPopup(popupRef.current);
     }
-  }, [effectiveNow]);
+  }, [effectiveNow, communityTick, layers, paintPopup]);
 
   // Geocoder search.
   const fetchGeocode = useCallback(
@@ -458,6 +561,108 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, [searchQuery, fetchGeocode]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !draftPin) {
+      return;
+    }
+    const marker = new maplibregl.Marker({ color: pinMode === 'tow' ? '#ea580c' : '#7c3aed' })
+      .setLngLat([draftPin.lng, draftPin.lat])
+      .addTo(m);
+    return () => {
+      marker.remove();
+    };
+  }, [draftPin, pinMode, mapReady]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+    const onClick = (event: maplibregl.MapMouseEvent) => {
+      if (!pinModeRef.current) return;
+      const ids = clickableLayerIds(layerSpecsRef.current).filter((id) => m.getLayer(id));
+      if (ids.length > 0) {
+        const hits = m.queryRenderedFeatures(event.point, { layers: ids });
+        if (hits.length > 0) return;
+      }
+      setDraftPin({ lng: event.lngLat.lng, lat: event.lngLat.lat });
+    };
+    m.on('click', onClick);
+    return () => {
+      m.off('click', onClick);
+    };
+  }, [mapReady]);
+
+  useEffect(() => {
+    if (!mapReady || !supabasePublicEnv()) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const since = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+      const [towResult, suggestionResult, correctionResult] = await Promise.all([
+        supabase
+          .from('tow_alerts')
+          .select('id, lng, lat, note, created_at')
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        supabase
+          .from('parking_suggestions')
+          .select('id, name, parking_type, lng, lat, comment, status')
+          .in('status', ['pending', 'approved'])
+          .limit(500),
+        supabase
+          .from('parking_corrections')
+          .select('id, feature_name, kind, comment, created_at, status, lng, lat')
+          .order('created_at', { ascending: false })
+          .limit(40)
+      ]);
+      if (cancelled) return;
+      const m = map.current;
+      if (m && m.getSource(TOW_SOURCE_ID)) {
+        const source = m.getSource(TOW_SOURCE_ID) as maplibregl.GeoJSONSource;
+        const rows = towResult.data ?? [];
+        source.setData(
+          pointsToGeoJSON(
+            rows.map((row) => ({
+              id: row.id,
+              lng: row.lng,
+              lat: row.lat,
+              properties: {
+                note: row.note ?? '',
+                weight: towWeight(row.created_at),
+                created_at: row.created_at,
+                age_label: formatRelative(row.created_at)
+              }
+            }))
+          )
+        );
+      }
+      if (m && m.getSource(COMMUNITY_SOURCE_ID)) {
+        const source = m.getSource(COMMUNITY_SOURCE_ID) as maplibregl.GeoJSONSource;
+        const rows = suggestionResult.data ?? [];
+        source.setData(
+          pointsToGeoJSON(
+            rows.map((row) => ({
+              id: row.id,
+              lng: row.lng,
+              lat: row.lat,
+              properties: {
+                name: row.name,
+                parking_type: row.parking_type,
+                comment: row.comment,
+                status: row.status
+              }
+            }))
+          )
+        );
+      }
+      setCorrections((correctionResult.data ?? []) as CorrectionRow[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mapReady, communityTick, userId, layersAdded]);
 
   const handleSelectPlace = useCallback((feature: GeocodeFeature) => {
     const m = map.current;
@@ -606,9 +811,286 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken }: Ma
         </div>
       )}
 
-      <MapLegend />
+      <MapLegend
+        layers={layers}
+        onToggle={(key) => setLayers((current) => ({ ...current, [key]: !current[key] }))}
+      />
+
+      {caption && (
+        <p className="pointer-events-none absolute left-1/2 top-[4.6rem] z-20 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 text-center text-[11px] font-medium text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          {caption}
+        </p>
+      )}
+
+      <ReportDock
+        signedIn={Boolean(userId)}
+        pinMode={pinMode}
+        correctionCount={corrections.length}
+        correctionsOpen={correctionsOpen}
+        onSuggest={() => {
+          setPinMode((current) => (current === 'suggest' ? null : 'suggest'));
+          setDraftPin(null);
+          setCorrectionsOpen(false);
+        }}
+        onTow={() => {
+          setPinMode((current) => (current === 'tow' ? null : 'tow'));
+          setDraftPin(null);
+          setCorrectionsOpen(false);
+        }}
+        onCorrections={() => {
+          setCorrectionsOpen((open) => !open);
+          setPinMode(null);
+          setDraftPin(null);
+        }}
+      />
+
+      {draftPin && pinMode && (
+        <PinForm
+          mode={pinMode}
+          lng={draftPin.lng}
+          lat={draftPin.lat}
+          onCancel={() => setDraftPin(null)}
+          onSaved={() => {
+            setDraftPin(null);
+            setPinMode(null);
+            setCommunityTick((n) => n + 1);
+          }}
+        />
+      )}
+
+      <CorrectionsDrawer
+        open={correctionsOpen}
+        rows={corrections}
+        onClose={() => setCorrectionsOpen(false)}
+        onFocus={(lng, lat) => {
+          map.current?.flyTo({ center: [lng, lat], zoom: 16, duration: 800 });
+        }}
+      />
 
       <div ref={mapContainer} className="w-full h-full" />
     </div>
   );
+}
+
+const CROWD_FONT = ['Open Sans Semibold', 'Noto Sans Regular'];
+
+function ensureCrowdLayers(
+  map: maplibregl.Map,
+  openCard: { current: (lngLat: maplibregl.LngLat, html: string) => void }
+) {
+  if (!map.getSource(TOW_SOURCE_ID)) {
+    map.addSource(TOW_SOURCE_ID, { type: 'geojson', data: emptyCollection() });
+  }
+  if (!map.getLayer(TOW_HEAT_LAYER_ID)) {
+    map.addLayer({
+      id: TOW_HEAT_LAYER_ID,
+      type: 'heatmap',
+      source: TOW_SOURCE_ID,
+      maxzoom: 15,
+      paint: {
+        'heatmap-weight': ['coalesce', ['get', 'weight'], 0.5],
+        'heatmap-intensity': 0.8,
+        'heatmap-radius': 28,
+        'heatmap-opacity': 0.7,
+        'heatmap-color': [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0,
+          'rgba(0,0,0,0)',
+          0.3,
+          '#fdba74',
+          0.7,
+          '#ea580c',
+          1,
+          '#b91c1c'
+        ]
+      }
+    });
+  }
+  if (!map.getLayer(TOW_POINT_LAYER_ID)) {
+    map.addLayer({
+      id: TOW_POINT_LAYER_ID,
+      type: 'circle',
+      source: TOW_SOURCE_ID,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 8, 17, 11],
+        'circle-color': '#ea580c',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff'
+      }
+    });
+    map.on('click', TOW_POINT_LAYER_ID, (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      openCard.current(event.lngLat, towCardHtml(feature.properties ?? {}));
+    });
+    map.on('mouseenter', TOW_POINT_LAYER_ID, () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', TOW_POINT_LAYER_ID, () => {
+      map.getCanvas().style.cursor = '';
+    });
+  }
+  if (!map.getLayer(TOW_LABEL_LAYER_ID)) {
+    try {
+      map.addLayer({
+        id: TOW_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: TOW_SOURCE_ID,
+        minzoom: 13,
+        layout: {
+          'text-field': ['concat', 'Tow crew · ', ['coalesce', ['get', 'age_label'], '']],
+          'text-font': CROWD_FONT,
+          'text-size': 11,
+          'text-offset': [0, 1.15],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+          'text-optional': true
+        },
+        paint: {
+          'text-color': '#9a3412',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.4
+        }
+      });
+    } catch (err) {
+      console.warn('Could not add tow labels:', err);
+    }
+  }
+  if (!map.getSource(COMMUNITY_SOURCE_ID)) {
+    map.addSource(COMMUNITY_SOURCE_ID, { type: 'geojson', data: emptyCollection() });
+  }
+  if (!map.getLayer(COMMUNITY_LAYER_ID)) {
+    map.addLayer({
+      id: COMMUNITY_LAYER_ID,
+      type: 'circle',
+      source: COMMUNITY_SOURCE_ID,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 6, 15, 9],
+        'circle-color': ['case', ['==', ['get', 'status'], 'pending'], '#7c3aed', '#059669'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff'
+      }
+    });
+    map.on('click', COMMUNITY_LAYER_ID, (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      openCard.current(event.lngLat, communityCardHtml(feature.properties ?? {}));
+    });
+    map.on('mouseenter', COMMUNITY_LAYER_ID, () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', COMMUNITY_LAYER_ID, () => {
+      map.getCanvas().style.cursor = '';
+    });
+  }
+  if (!map.getLayer(COMMUNITY_LABEL_LAYER_ID)) {
+    try {
+      map.addLayer({
+        id: COMMUNITY_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: COMMUNITY_SOURCE_ID,
+        minzoom: 14.5,
+        layout: {
+          'text-field': ['coalesce', ['get', 'name'], 'Suggested spot'],
+          'text-font': CROWD_FONT,
+          'text-size': 11,
+          'text-offset': [0, 1.15],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+          'text-optional': true
+        },
+        paint: {
+          'text-color': ['case', ['==', ['get', 'status'], 'pending'], '#5b21b6', '#065f46'],
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.4
+        }
+      });
+    } catch (err) {
+      console.warn('Could not add community labels:', err);
+    }
+  }
+}
+
+function setCrowdVisibility(map: maplibregl.Map, layers: MapLayers) {
+  const show = (id: string, visible: boolean) => {
+    if (!map.getLayer(id)) return;
+    map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  };
+  show(TOW_HEAT_LAYER_ID, layers.tows);
+  show(TOW_POINT_LAYER_ID, layers.tows);
+  show(TOW_LABEL_LAYER_ID, layers.tows);
+  show(COMMUNITY_LAYER_ID, layers.community);
+  show(COMMUNITY_LABEL_LAYER_ID, layers.community);
+}
+
+function uniqueParkingHits(
+  features: maplibregl.MapGeoJSONFeature[]
+): maplibregl.MapGeoJSONFeature[] {
+  const seen = new Set<string>();
+  const unique: maplibregl.MapGeoJSONFeature[] = [];
+  for (const feature of features) {
+    const props = feature.properties ?? {};
+    const key = [
+      props.parking_type ?? '',
+      props.name ?? '',
+      props.address ?? '',
+      feature.geometry?.type ?? ''
+    ].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(feature);
+  }
+  return unique;
+}
+
+function towCardHtml(props: Record<string, unknown>): string {
+  const age =
+    typeof props.age_label === 'string' && props.age_label
+      ? props.age_label
+      : typeof props.created_at === 'string'
+        ? formatRelative(props.created_at)
+        : 'Recently';
+  const note = typeof props.note === 'string' ? props.note.trim() : '';
+  return `<div style="font-family:sans-serif;color:#1c1917">
+    <div style="font-size:14px;font-weight:700">Tow crew reported</div>
+    <div style="margin-top:4px;font-size:13px">${escapeHtml(age)}</div>
+    ${note ? `<div style="margin-top:6px;font-size:13px">${escapeHtml(note)}</div>` : ''}
+    <div style="margin-top:8px;font-size:12px;line-height:1.4;color:#57534e">A driver reported a tow crew here. This is not an official tow-away zone.</div>
+  </div>`;
+}
+
+function communityCardHtml(props: Record<string, unknown>): string {
+  const name = typeof props.name === 'string' && props.name.trim() ? props.name.trim() : 'Suggested spot';
+  const kind = parkingTypeLabel(typeof props.parking_type === 'string' ? props.parking_type : '');
+  const pending = props.status === 'pending';
+  const comment = typeof props.comment === 'string' ? props.comment.trim() : '';
+  const status = pending
+    ? 'Pending review. Only you can see this until it is approved.'
+    : 'Community suggestion. Not an official rule.';
+  return `<div style="font-family:sans-serif;color:#1c1917">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#57534e">${pending ? 'Pending suggestion' : 'Community spot'}</div>
+    <div style="margin-top:4px;font-size:14px;font-weight:700">${escapeHtml(name)}</div>
+    <div style="margin-top:4px;font-size:13px">${escapeHtml(kind)}</div>
+    ${comment ? `<div style="margin-top:6px;font-size:13px">${escapeHtml(comment)}</div>` : ''}
+    <div style="margin-top:8px;font-size:12px;line-height:1.4;color:#57534e">${status}</div>
+  </div>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
 }

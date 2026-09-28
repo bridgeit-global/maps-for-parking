@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     "How Maps for Parking collects, uses, and protects your information.",
 };
 
-const LAST_UPDATED = "June 10, 2026";
+const LAST_UPDATED = "September 29, 2026";
 
 export default function PrivacyPolicyPage() {
   return (
@@ -42,13 +42,26 @@ export default function PrivacyPolicyPage() {
             zoom level or features tapped).
           </li>
           <li>
+            <strong className="text-white/90">Account and email:</strong> You
+            can use the map without an account. If you sign in, we collect your
+            email address to send a one-time sign-in link and to attach the
+            parking checks, tow reports, and spot suggestions you submit.
+          </li>
+          <li>
+            <strong className="text-white/90">Reports you submit:</strong> When
+            you confirm a rule, report a problem, drop a tow alert, or suggest a
+            spot, we store the location you chose, your comment, and an optional
+            photo. Those reports can be shown to other people using the map.
+          </li>
+          <li>
             <strong className="text-white/90">Communications:</strong> If you
             contact us for support, we collect the information you provide
             (such as your name, email, and message content).
           </li>
         </ul>
         <p className="mt-2">
-          We do not require you to create an account to use the Service.
+          You do not need an account to view the map. An account is required
+          only to submit a rule check, a tow report, or a new-spot suggestion.
         </p>
       </section>
 
@@ -59,7 +72,7 @@ export default function PrivacyPolicyPage() {
         <p className="mt-2">We use collected information to:</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Provide, operate, and improve the Service</li>
-          <li>Display parking zones and related information on the map</li>
+          <li>Display parking zones, crowd checks, and tow reports on the map</li>
           <li>Respond to support requests</li>
           <li>Monitor performance, fix errors, and prevent abuse</li>
           <li>Comply with applicable legal obligations</li>
@@ -71,11 +84,12 @@ export default function PrivacyPolicyPage() {
           4. Third-party services
         </h2>
         <p className="mt-2">
-          The Service relies on third-party providers to deliver map tiles and
-          parking data, including Mapbox, MapLibre GL, CARTO basemaps, and
-          OpenStreetMap contributors. When you use the map, your browser may
-          send requests (including IP address and approximate location) to these
-          providers according to their own privacy policies.
+          The Service relies on third-party providers to deliver map tiles,
+          parking data, and accounts, including Mapbox, MapLibre GL, CARTO
+          basemaps, OpenStreetMap contributors, and Supabase (sign-in, report
+          storage, and photos). When you use the map or sign in, your browser
+          may send requests (including IP address, email, and approximate
+          location) to these providers according to their own privacy policies.
         </p>
         <p className="mt-2">
           The Service may link to external websites (for example, government
@@ -89,9 +103,9 @@ export default function PrivacyPolicyPage() {
           5. Cookies and local storage
         </h2>
         <p className="mt-2">
-          We may use essential cookies or browser local storage to remember
-          preferences (such as language settings) and to keep the Service
-          functioning. We do not use cookies for targeted advertising.
+          We may use essential cookies to keep you signed in and to remember
+          preferences (such as language settings). We do not use cookies for
+          targeted advertising.
         </p>
       </section>
 
@@ -100,9 +114,9 @@ export default function PrivacyPolicyPage() {
         <p className="mt-2">
           We retain information only as long as necessary to provide the
           Service, resolve disputes, enforce our agreements, and meet legal
-          requirements. Location data processed in your browser is not stored
-          on our servers unless you explicitly submit it to us (for example, in
-          a support message).
+          requirements. Location used only to centre the map in your browser is
+          not stored on our servers. Locations, comments, and photos you submit
+          with a report are stored until you delete the report or we remove it.
         </p>
       </section>
 

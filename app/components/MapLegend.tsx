@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
+import type { MapLayers } from '@/app/lib/community';
 
 interface LegendRow {
   id: string;
@@ -17,31 +18,67 @@ interface LegendRow {
 const ROWS: LegendRow[] = [
   {
     id: 'no',
-    swatch: 'bg-red-500',
-    icon: '/icons/no-parking.png',
-    iconAlt: 'No parking icon',
-    title: 'No parking now',
-    description: 'Active no-parking, odd/even, or out-of-window zones.'
+    swatch: 'bg-red-600',
+    title: 'No parking',
+    description: 'Solid red. Always restricted.'
+  },
+  {
+    id: 'timed',
+    swatch: 'bg-amber-600',
+    title: 'Odd / even, blocked today',
+    description: 'Dashed amber. Legal on the other date.'
+  },
+  {
+    id: 'closed',
+    swatch: 'bg-orange-600',
+    title: 'Free street, closed now',
+    description: 'Dashed orange. Legal again when the window opens.'
+  },
+  {
+    id: 'legal',
+    swatch: 'bg-green-700',
+    title: 'Legal kerb now',
+    description: 'Open odd/even date, or a free street inside its hours.'
   },
   {
     id: 'on-street',
-    swatch: 'bg-blue-500',
-    icon: '/icons/street-parking.png',
-    iconAlt: 'On-street parking icon',
-    title: 'Paid · street',
-    description: 'Pay & park along the curb. Tap line for rates.'
+    swatch: 'bg-blue-600',
+    title: 'Pay & park street',
+    description: 'Tap the blue line for the rate.'
   },
   {
     id: 'off-street',
-    swatch: 'bg-blue-700',
-    icon: '/icons/off-street-parking.png',
-    iconAlt: 'Off-street parking lot icon',
-    title: 'Paid · lot',
-    description: 'Multi-storey or surface lots. Tap polygon for details.'
+    swatch: 'bg-blue-800',
+    title: 'Pay & park lot',
+    description: 'Lot names appear once you zoom in.'
+  },
+  {
+    id: 'tow',
+    swatch: 'bg-orange-500',
+    title: 'Tow crew report',
+    description: 'Tap the orange dot for when it was reported. Not an official tow-away zone.'
+  },
+  {
+    id: 'community',
+    swatch: 'bg-emerald-500',
+    title: 'Community spots',
+    description: 'Suggested spots. Purple is yours and still pending review.'
   }
 ];
 
-export default function MapLegend() {
+const TOGGLES: { key: keyof MapLayers; label: string }[] = [
+  { key: 'rules', label: 'Rules' },
+  { key: 'tows', label: 'Towing hotspots' },
+  { key: 'community', label: 'Community spots' }
+];
+
+export default function MapLegend({
+  layers,
+  onToggle
+}: {
+  layers: MapLayers;
+  onToggle: (key: keyof MapLayers) => void;
+}) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -76,7 +113,7 @@ export default function MapLegend() {
           ref={panelRef}
           role="dialog"
           aria-label="Map legend"
-          className="mb-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-black/85 text-white shadow-2xl backdrop-blur"
+          className="mb-2 max-h-[min(70vh,32rem)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-black/85 text-white shadow-2xl backdrop-blur"
         >
           <div className="flex items-center justify-between px-4 pb-2 pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
@@ -99,6 +136,19 @@ export default function MapLegend() {
                 <path d="M6 6l12 12M18 6l-12 12" />
               </svg>
             </button>
+          </div>
+          <div className="space-y-1 px-4 pb-2">
+            {TOGGLES.map((toggle) => (
+              <label key={toggle.key} className="flex items-center gap-2 text-[12px] text-white/90">
+                <input
+                  type="checkbox"
+                  checked={layers[toggle.key]}
+                  onChange={() => onToggle(toggle.key)}
+                  className="accent-white"
+                />
+                {toggle.label}
+              </label>
+            ))}
           </div>
           <ul className="space-y-2 px-4 pb-4 pt-1">
             {ROWS.map((row) => (
@@ -144,9 +194,10 @@ export default function MapLegend() {
         className="flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3.5 py-2 text-xs font-semibold text-white shadow-2xl backdrop-blur transition hover:bg-black/80"
       >
         <span className="flex items-center -space-x-1.5" aria-hidden>
-          <span className="h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-black/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-black/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-blue-700 ring-2 ring-black/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-black/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-black/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-green-700 ring-2 ring-black/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-blue-600 ring-2 ring-black/70" />
         </span>
         <span className="whitespace-nowrap">Legend</span>
       </button>
