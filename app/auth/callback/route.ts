@@ -1,21 +1,39 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/app/lib/supabase/server';
-import { safeNextPath } from '@/app/lib/auth-redirect';
+import { AUTH_NEXT_COOKIE, safeNextPath } from '@/app/lib/auth-redirect';
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const code = url.searchParams.get('code');
-  const tokenHash = url.searchParams.get('token_hash');
-  const type = url.searchParams.get('type');
-  const next = safeNextPath(url.searchParams.get('next'));
+function readNextPath(request: NextRequest): string {
+  const queryNext = request.nextUrl.searchParams.get('next');
+  if (queryNext) return safeNextPath(queryNext);
+
+  const raw = request.cookies.get(AUTH_NEXT_COOKIE)?.value;
+  if (!raw) return '/';
+  try {
+    return safeNextPath(decodeURIComponent(raw));
+  } catch {
+    return safeNextPath(raw);
+  }
+}
+
+function redirectClearingNext(request: NextRequest, path: string) {
+  const response = NextResponse.redirect(new URL(path, request.url));
+  response.cookies.set(AUTH_NEXT_COOKIE, '', { path: '/', maxAge: 0 });
+  return response;
+}
+
+export async function GET(request: NextRequest) {
+  const code = request.nextUrl.searchParams.get('code');
+  const tokenHash = request.nextUrl.searchParams.get('token_hash');
+  const type = request.nextUrl.searchParams.get('type');
+  const next = readNextPath(request);
 
   const supabase = await createClient();
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(new URL(next, url.origin));
+      return redirectClearingNext(request, next);
     }
   }
 
@@ -25,9 +43,9 @@ export async function GET(request: Request) {
       token_hash: tokenHash
     });
     if (!error) {
-      return NextResponse.redirect(new URL(next, url.origin));
+      return redirectClearingNext(request, next);
     }
   }
 
-  return NextResponse.redirect(new URL('/login?error=auth', url.origin));
+  return redirectClearingNext(request, '/login?error=auth');
 }

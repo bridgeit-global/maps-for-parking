@@ -63,8 +63,8 @@ export function ReportDock({
           <span className="hidden sm:inline">Tow crew here now</span>
         </button>
         <button type="button" onClick={onCorrections} className={dockClass(correctionsOpen)} aria-expanded={correctionsOpen}>
-          <span className="sm:hidden">Fixes</span>
-          <span className="hidden sm:inline">Corrections</span>
+          <span className="sm:hidden">Recommend</span>
+          <span className="hidden sm:inline">Recommend correction</span>
           {correctionCount > 0 ? ` · ${correctionCount}` : ''}
         </button>
       </div>
@@ -240,8 +240,8 @@ export function CorrectionsDrawer({
   return (
     <div className="absolute bottom-[max(5.25rem,calc(env(safe-area-inset-bottom)+4.75rem))] left-3 right-3 z-30 max-h-[min(70dvh,28rem)] overflow-hidden rounded-2xl border border-white/10 bg-black/90 text-white shadow-2xl sm:bottom-24 sm:left-4 sm:right-auto sm:w-[min(22rem,calc(100%-2rem))]">
       <div className="flex items-center justify-between px-4 py-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">Corrections</p>
-        <button type="button" onClick={onClose} aria-label="Close corrections" className="flex h-11 w-11 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">Recommend correction</p>
+        <button type="button" onClick={onClose} aria-label="Close recommended corrections" className="flex h-11 w-11 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" aria-hidden>
             <path d="M6 6l12 12M18 6l-12 12" />
           </svg>

@@ -38,7 +38,7 @@ const ROWS: LegendRow[] = [
     id: 'legal',
     swatch: 'bg-green-700',
     title: 'Legal kerb now',
-    description: 'Open odd/even date, or a free street inside its hours.'
+    description: 'Free parking at the owner’s risk. Open odd/even date, or a free street inside its hours.'
   },
   {
     id: 'on-street',

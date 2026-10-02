@@ -41,6 +41,7 @@ import { createClient } from '@/app/lib/supabase/client';
 import { supabasePublicEnv } from '@/app/lib/supabase/env';
 import { useAuth } from '@/app/lib/useAuth';
 import { CorrectionsDrawer, PinForm, ReportDock, type CorrectionRow } from './CrowdTools';
+import DemoTour from './DemoTour';
 
 const MUMBAI_CENTER = {
   lng: 72.83,
@@ -82,6 +83,26 @@ interface TilesetMetadata {
 interface ParkingSelection {
   features: maplibregl.MapGeoJSONFeature[];
   lngLat: { lng: number; lat: number };
+}
+
+/**
+ * First place or street label above the road network.
+ * Voyager's earliest text layer is a waterway name under the roads, so using
+ * that would hide the parking lines.
+ */
+function firstLocationLabelId(map: maplibregl.Map): string | undefined {
+  const layers = map.getStyle()?.layers ?? [];
+  let seenRoad = false;
+  for (const layer of layers) {
+    const id = layer.id.toLowerCase();
+    if (layer.type === 'line' && (id.includes('road') || id.includes('bridge'))) {
+      seenRoad = true;
+    }
+    if (!seenRoad || layer.type !== 'symbol') continue;
+    const layout = layer.layout as { 'text-field'?: unknown } | undefined;
+    if (layout?.['text-field']) return layer.id;
+  }
+  return undefined;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -453,6 +474,9 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
           ? tilesetMetadata.vector_layers.map((vl) => ({ id: vl.id, fields: vl.fields }))
           : [{ id: tilesetId?.split('.').pop() ?? 'default', fields: undefined }];
 
+      const labelLayerId = firstLocationLabelId(m);
+      const beforeId = labelLayerId && m.getLayer(labelLayerId) ? labelLayerId : undefined;
+
       const newSpecs: ParkingLayerSpec[] = [];
       for (const sl of sourceLayers) {
         const specs = addParkingClassLayers({
@@ -461,6 +485,7 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
           sourceLayer: sl.id,
           fields: sl.fields,
           effectiveNow: effectiveNowRef.current,
+          beforeId,
           iconsLoaded
         });
         newSpecs.push(...specs);
@@ -807,6 +832,8 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
         </div>
       )}
       </div>
+
+      <DemoTour />
 
       <MapLegend
         layers={layers}

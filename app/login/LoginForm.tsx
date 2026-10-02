@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/app/lib/supabase/client';
 import { supabasePublicEnv } from '@/app/lib/supabase/env';
-import { safeNextPath } from '@/app/lib/auth-redirect';
+import { authNextCookie, safeNextPath } from '@/app/lib/auth-redirect';
 
 export default function LoginForm({
   nextPath,
@@ -31,7 +31,8 @@ export default function LoginForm({
     setFormError(null);
     try {
       const supabase = createClient();
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      document.cookie = authNextCookie(next);
+      const redirectTo = `${window.location.origin}/auth/callback`;
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: { emailRedirectTo: redirectTo }
