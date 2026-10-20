@@ -36,6 +36,7 @@ import {
   towWeight,
   type MapLayers
 } from '@/app/lib/community';
+import { AnalyticsEvent, trackAction } from '@/app/lib/analytics';
 import { recordFeedbackView } from '@/app/lib/contributor';
 import { createClient } from '@/app/lib/supabase/client';
 import { supabasePublicEnv } from '@/app/lib/supabase/env';
@@ -325,6 +326,17 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
     (lngLat: maplibregl.LngLatLike, features: maplibregl.MapGeoJSONFeature[]) => {
       if (features.length === 0) return;
       const point = maplibregl.LngLat.convert(lngLat);
+      const top = features[0];
+      const parkingType =
+        typeof top?.properties?.parking_type === 'string'
+          ? top.properties.parking_type
+          : typeof top?.properties?.type === 'string'
+            ? top.properties.type
+            : null;
+      trackAction(AnalyticsEvent.MapSegmentOpened, {
+        stack_size: features.length,
+        parking_type: parkingType
+      });
       setNoteHtml(null);
       setSelectionIndex(0);
       setParkingSelection({
@@ -697,12 +709,18 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
       .setLngLat(feature.center)
       .addTo(m);
     m.flyTo({ center: feature.center, zoom: FLY_TO_ZOOM, duration: 1200 });
+    trackAction(AnalyticsEvent.MapSearchSelected, {
+      place: feature.place_name.slice(0, 80)
+    });
     setSearchQuery('');
     setSearchResults([]);
     setSearchDropdownOpen(false);
   }, []);
 
   const handleTimeOverrideChange = useCallback((next: Date | null) => {
+    trackAction(AnalyticsEvent.MapTimeOverride, {
+      overridden: next !== null
+    });
     setOverride(next);
   }, []);
 
@@ -837,7 +855,13 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
 
       <MapLegend
         layers={layers}
-        onToggle={(key) => setLayers((current) => ({ ...current, [key]: !current[key] }))}
+        onToggle={(key) => {
+          setLayers((current) => {
+            const next = !current[key];
+            trackAction(AnalyticsEvent.MapLayerToggled, { layer: key, visible: next });
+            return { ...current, [key]: next };
+          });
+        }}
       />
 
       {caption && !searchDropdownOpen && !sheetOpen && (
@@ -852,17 +876,33 @@ export default function MapView({ tilesetUrl, tilesetId, mapboxAccessToken, capt
         correctionCount={corrections.length}
         correctionsOpen={correctionsOpen}
         onSuggest={() => {
-          setPinMode((current) => (current === 'suggest' ? null : 'suggest'));
+          setPinMode((current) => {
+            const next = current === 'suggest' ? null : 'suggest';
+            if (next) trackAction(AnalyticsEvent.CrowdSuggestMode);
+            return next;
+          });
           setDraftPin(null);
           setCorrectionsOpen(false);
         }}
         onTow={() => {
-          setPinMode((current) => (current === 'tow' ? null : 'tow'));
+          setPinMode((current) => {
+            const next = current === 'tow' ? null : 'tow';
+            if (next) trackAction(AnalyticsEvent.CrowdTowMode);
+            return next;
+          });
           setDraftPin(null);
           setCorrectionsOpen(false);
         }}
         onCorrections={() => {
-          setCorrectionsOpen((open) => !open);
+          setCorrectionsOpen((open) => {
+            const next = !open;
+            if (next) {
+              trackAction(AnalyticsEvent.CrowdCorrectionsOpened, {
+                count: corrections.length
+              });
+            }
+            return next;
+          });
           setPinMode(null);
           setDraftPin(null);
         }}

@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import { AnalyticsEvent, trackAction } from '@/app/lib/analytics';
 import { createClient } from '@/app/lib/supabase/client';
 import { loginPath } from '@/app/lib/auth-redirect';
 import {
@@ -38,8 +39,9 @@ export function ReportDock({
   onTow: () => void;
   onCorrections: () => void;
 }) {
-  function gate(reason: string, action: () => void) {
+  function gate(reason: string, action: () => void, intent: string) {
     if (!signedIn) {
+      trackAction(AnalyticsEvent.AuthGate, { intent, source: 'report_dock' });
       window.location.href = loginPath(reason);
       return;
     }
@@ -54,11 +56,19 @@ export function ReportDock({
         </p>
       )}
       <div className="flex gap-2 overflow-x-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 sm:flex-col sm:items-end sm:overflow-visible sm:px-0 sm:pb-0">
-        <button type="button" onClick={() => gate('Sign in to suggest a parking spot.', onSuggest)} className={dockClass(pinMode === 'suggest')}>
+        <button
+          type="button"
+          onClick={() => gate('Sign in to suggest a parking spot.', onSuggest, 'suggest_spot')}
+          className={dockClass(pinMode === 'suggest')}
+        >
           <span className="sm:hidden">Suggest</span>
           <span className="hidden sm:inline">Suggest a spot</span>
         </button>
-        <button type="button" onClick={() => gate('Sign in to report a tow crew.', onTow)} className={dockClass(pinMode === 'tow')}>
+        <button
+          type="button"
+          onClick={() => gate('Sign in to report a tow crew.', onTow, 'tow_report')}
+          className={dockClass(pinMode === 'tow')}
+        >
           <span className="sm:hidden">Tow crew</span>
           <span className="hidden sm:inline">Tow crew here now</span>
         </button>
@@ -128,6 +138,10 @@ export function PinForm({
           }
           throw insertError;
         }
+        trackAction(AnalyticsEvent.CrowdTowReported, {
+          source: 'pin',
+          has_note: Boolean(comment.trim())
+        });
       } else {
         const { error: insertError } = await supabase.from('parking_suggestions').insert({
           user_id: userId,
@@ -139,6 +153,11 @@ export function PinForm({
           status: 'pending'
         });
         if (insertError) throw insertError;
+        trackAction(AnalyticsEvent.CrowdSpotSuggested, {
+          parking_type: parkingType,
+          has_name: Boolean(name.trim()),
+          has_comment: Boolean(comment.trim())
+        });
       }
       const after = await loadContributorProgress();
       const line = formatCredit(before, after);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AnalyticsEvent, trackAction } from "./lib/analytics";
 import MapView from "./components/MapView";
 import AuthButton from "./components/AuthButton";
 
@@ -65,7 +66,13 @@ export default function Home() {
           className="flex size-11 items-center justify-center rounded-full bg-white/5 transition hover:bg-white/10"
           aria-label={isMenuOpen ? "Close menu" : "Open menu"}
           aria-expanded={isMenuOpen}
-          onClick={() => setIsMenuOpen((open) => !open)}
+          onClick={() => {
+            setIsMenuOpen((open) => {
+              const next = !open;
+              trackAction(AnalyticsEvent.UiMenuToggled, { open: next });
+              return next;
+            });
+          }}
         >
           <svg
             viewBox="0 0 24 24"
@@ -97,7 +104,11 @@ export default function Home() {
           <button
             className="inline-flex h-10 items-center gap-1 rounded-full border border-white/15 px-2.5 text-xs font-semibold"
             onClick={() =>
-              setLanguage((current) => (current === "en" ? "mr" : "en"))
+              setLanguage((current) => {
+                const next = current === "en" ? "mr" : "en";
+                trackAction(AnalyticsEvent.UiLanguageSwitched, { language: next });
+                return next;
+              })
             }
             aria-pressed={language === "mr"}
             aria-label={language === "en" ? "Switch to Marathi" : "Switch to English"}
@@ -305,6 +316,12 @@ export default function Home() {
                     href={item.href}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() =>
+                      trackAction(AnalyticsEvent.UiQuickAction, {
+                        action: item.label,
+                        external: true
+                      })
+                    }
                     className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
                   >
                     <span className="text-xl">{item.icon}</span>
@@ -314,6 +331,12 @@ export default function Home() {
                   <button
                     key={item.label}
                     type="button"
+                    onClick={() =>
+                      trackAction(AnalyticsEvent.UiQuickAction, {
+                        action: item.label,
+                        external: false
+                      })
+                    }
                     className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
                   >
                     <span className="text-xl">{item.icon}</span>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { AnalyticsEvent, trackAction } from '@/app/lib/analytics';
 import { createClient } from '@/app/lib/supabase/client';
 import { useAuth } from '@/app/lib/useAuth';
 import ContributorChip from './ContributorChip';
@@ -34,6 +35,7 @@ export default function AuthButton() {
   async function signOut() {
     setBusy(true);
     try {
+      trackAction(AnalyticsEvent.AuthSignedOut);
       const supabase = createClient();
       await supabase.auth.signOut();
       router.refresh();

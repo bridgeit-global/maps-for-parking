@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     "How Maps for Parking collects, uses, and protects your information.",
 };
 
-const LAST_UPDATED = "September 29, 2026";
+const LAST_UPDATED = "October 20, 2026";
 
 export default function PrivacyPolicyPage() {
   return (
@@ -39,7 +39,10 @@ export default function PrivacyPolicyPage() {
             <strong className="text-white/90">Usage data:</strong> We may
             collect standard technical information such as browser type, device
             type, pages viewed, and interactions with the map (for example,
-            zoom level or features tapped).
+            spots opened, searches, rule checks, tow reports, and spot
+            suggestions). When you are signed in, those events may include your
+            account id so we can understand which actions contributors take —
+            not your email address.
           </li>
           <li>
             <strong className="text-white/90">Account and email:</strong> You
@@ -91,11 +94,13 @@ export default function PrivacyPolicyPage() {
         </h2>
         <p className="mt-2">
           The Service relies on third-party providers to deliver map tiles,
-          parking data, and accounts, including Mapbox, MapLibre GL, CARTO
-          basemaps, OpenStreetMap contributors, and Supabase (sign-in, report
-          storage, and photos). When you use the map or sign in, your browser
-          may send requests (including IP address, email, and approximate
-          location) to these providers according to their own privacy policies.
+          parking data, accounts, and product analytics, including Mapbox,
+          MapLibre GL, CARTO basemaps, OpenStreetMap contributors, Supabase
+          (sign-in, report storage, and photos), and Vercel Web Analytics (page
+          views and custom product events). When you use the map or sign in,
+          your browser may send requests (including IP address, email, and
+          approximate location) to these providers according to their own
+          privacy policies.
         </p>
         <p className="mt-2">
           The Service may link to external websites (for example, government

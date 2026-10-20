@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { AnalyticsEvent, trackAction } from '@/app/lib/analytics';
 import { createClient } from '@/app/lib/supabase/client';
 import { supabasePublicEnv } from '@/app/lib/supabase/env';
 import { authNextCookie, safeNextPath } from '@/app/lib/auth-redirect';
@@ -24,6 +25,13 @@ export default function LoginForm({
   const configured = supabasePublicEnv() !== null;
   const next = safeNextPath(nextPath);
 
+  useEffect(() => {
+    trackAction(AnalyticsEvent.AuthLoginOpened, {
+      has_reason: Boolean(reason),
+      next_path: next
+    });
+  }, [reason, next]);
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!configured) return;
@@ -41,6 +49,7 @@ export default function LoginForm({
         setFormError(signInError.message);
         return;
       }
+      trackAction(AnalyticsEvent.AuthLoginLinkSent, { next_path: next });
       setSentTo(email.trim());
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Could not send the sign-in email.');

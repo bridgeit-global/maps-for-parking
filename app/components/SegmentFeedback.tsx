@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Image from 'next/image';
+import { AnalyticsEvent, trackAction } from '@/app/lib/analytics';
 import { createClient } from '@/app/lib/supabase/client';
 import { loginPath } from '@/app/lib/auth-redirect';
 import { formatRelative, type ValidationKind } from '@/app/lib/community';
@@ -119,8 +120,9 @@ export default function SegmentFeedback({
     };
   }
 
-  function requireSignIn(reason: string) {
+  function requireSignIn(reason: string, intent: string) {
     if (userId) return false;
+    trackAction(AnalyticsEvent.AuthGate, { intent, source: 'segment_feedback' });
     window.location.href = loginPath(reason);
     return true;
   }
@@ -170,13 +172,17 @@ export default function SegmentFeedback({
   }
 
   async function confirm() {
-    if (requireSignIn('Sign in to confirm this parking rule.')) return;
+    if (requireSignIn('Sign in to confirm this parking rule.', 'confirm_rule')) return;
     setBusy(true);
     setError(null);
     try {
       const done = await rememberCredit();
       await saveValidation('confirm', null, null);
       await done();
+      trackAction(AnalyticsEvent.CrowdRuleConfirmed, {
+        parking_type: parkingType,
+        feature_id: featureId.slice(0, 80)
+      });
       setMode(null);
       onCommunityChange();
     } catch (err) {
@@ -189,7 +195,7 @@ export default function SegmentFeedback({
   async function submitProblem(event: FormEvent) {
     event.preventDefault();
     if (!mode || mode === 'tow') return;
-    if (requireSignIn('Sign in to report a problem with this rule.')) return;
+    if (requireSignIn('Sign in to report a problem with this rule.', mode)) return;
     const text = comment.trim();
     if (mode === 'rule_wrong' && !text) {
       setError('Say what looks wrong — hours, type, price, or that it is gone.');
@@ -202,6 +208,13 @@ export default function SegmentFeedback({
       const photoPath = userId ? await uploadPhoto(userId) : null;
       await saveValidation(mode, text || null, photoPath);
       await done();
+      trackAction(AnalyticsEvent.CrowdProblemReported, {
+        kind: mode,
+        parking_type: parkingType,
+        feature_id: featureId.slice(0, 80),
+        has_photo: Boolean(photoPath),
+        has_comment: Boolean(text)
+      });
       setMode(null);
       setComment('');
       setPhoto(null);
@@ -215,7 +228,7 @@ export default function SegmentFeedback({
 
   async function submitTow(event: FormEvent) {
     event.preventDefault();
-    if (requireSignIn('Sign in to report a tow crew here.')) return;
+    if (requireSignIn('Sign in to report a tow crew here.', 'tow_report')) return;
     setBusy(true);
     setError(null);
     try {
@@ -235,6 +248,11 @@ export default function SegmentFeedback({
         throw insertError;
       }
       await done();
+      trackAction(AnalyticsEvent.CrowdTowReported, {
+        source: 'segment',
+        feature_id: featureId.slice(0, 80),
+        has_note: Boolean(note.trim())
+      });
       setMode(null);
       setNote('');
       onCommunityChange();
@@ -291,7 +309,7 @@ export default function SegmentFeedback({
           active={mine?.kind === 'rule_wrong'}
           disabled={busy}
           onClick={() => {
-            if (requireSignIn('Sign in to report a problem with this rule.')) return;
+            if (requireSignIn('Sign in to report a problem with this rule.', 'rule_wrong')) return;
             setMode('rule_wrong');
             setComment('');
             setError(null);
@@ -303,7 +321,7 @@ export default function SegmentFeedback({
           active={mine?.kind === 'board_missing'}
           disabled={busy}
           onClick={() => {
-            if (requireSignIn('Sign in to report a missing board.')) return;
+            if (requireSignIn('Sign in to report a missing board.', 'board_missing')) return;
             setMode('board_missing');
             setComment('');
             setError(null);
@@ -314,7 +332,7 @@ export default function SegmentFeedback({
         <ActionButton
           disabled={busy}
           onClick={() => {
-            if (requireSignIn('Sign in to report a tow crew here.')) return;
+            if (requireSignIn('Sign in to report a tow crew here.', 'tow_report')) return;
             setMode('tow');
             setError(null);
           }}

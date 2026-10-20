@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
+import { track } from '@vercel/analytics/server';
+import { AnalyticsEvent } from '@/app/lib/analytics-events';
 import { createClient } from '@/app/lib/supabase/server';
 import { AUTH_NEXT_COOKIE, safeNextPath } from '@/app/lib/auth-redirect';
 
@@ -31,18 +33,28 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      await track(AnalyticsEvent.AuthSignedIn, {
+        signed_in: true,
+        user_id: data.session?.user.id ?? 'unknown',
+        method: 'code'
+      });
       return redirectClearingNext(request, next);
     }
   }
 
   if (tokenHash && type) {
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       type: type as EmailOtpType,
       token_hash: tokenHash
     });
     if (!error) {
+      await track(AnalyticsEvent.AuthSignedIn, {
+        signed_in: true,
+        user_id: data.session?.user.id ?? 'unknown',
+        method: type
+      });
       return redirectClearingNext(request, next);
     }
   }
